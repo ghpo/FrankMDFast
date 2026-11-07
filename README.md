@@ -21,7 +21,7 @@
 ## Remote access (Tailscale) — start it from Settings
 
 <p align="center">
-  <img src="docs/remote-settings.png" width="860" alt="Settings › Remote access: status, Tailscale address, token, copy-ready commands and security note">
+  <img src="docs/remote-settings.png" width="860" alt="Settings › Remote access: start on app launch, Tailscale/Loopback, port, running status, token and copy-ready commands">
 </p>
 
 Serve this vault to a browser on another device on your Tailscale network,
