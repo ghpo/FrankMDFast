@@ -46,10 +46,15 @@ Loopback) and **Port** controls. Enabling it starts the server immediately when
 a token is configured (otherwise the panel explains what is missing) and
 remembers the choice for the next launch. Bind/port changes restart the server.
 These are per-machine app preferences (the app state `prefs.json`), not `.fed`
-keys. The launch controls sit above the status line (the screenshot was taken
-before they were added):
+keys.
 
-![Settings › Remote](remote-settings-panel.png)
+The **Access token** section generates a 32-byte token (copied to the
+clipboard), or accepts a pasted one, and saves it to the selected scope:
+*This vault* writes `auth_token` to `.fed`; *All vaults* writes it to the global
+config. If `FRANKMD_AUTH_TOKEN` is set, it overrides both and the panel warns
+about it.
+
+![Settings › Remote](remote-settings-token.png)
 
 ## Quick start
 

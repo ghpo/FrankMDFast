@@ -494,6 +494,8 @@ pub(crate) struct SettingsState {
     inputs: std::collections::HashMap<Key, Entity<InputState>>,
     /// Remote port input (Settings › Remote).
     remote_port: Option<Entity<InputState>>,
+    /// Access-token input (Settings › Remote).
+    remote_token: Option<Entity<InputState>>,
     /// Secret rows whose "Change…" input is open.
     pub(crate) editing_secrets: std::collections::HashSet<Key>,
     /// Inline error of the last failed write, by key.
@@ -516,6 +518,7 @@ impl SettingsState {
                 scope: Scope::default(),
                 inputs: Default::default(),
                 remote_port: None,
+                remote_token: None,
                 editing_secrets: Default::default(),
                 errors: Default::default(),
                 subscriptions: Vec::new(),
@@ -907,6 +910,7 @@ impl Shell {
                         v_flex()
                             .id("settings-rows")
                             .flex_1()
+                            .min_w_0()
                             .h_full()
                             .p_4()
                             .gap_1()
@@ -942,8 +946,11 @@ impl Shell {
             .filter(|url| !url.is_empty())
             .or_else(|| tailscale.map(|ip| format!("http://{ip}:{port}")))
             .unwrap_or_else(|| format!("http://<tailscale-ip>:{port}"));
-        let token_set = status.as_ref().is_some_and(|s| s.running)
-            || config.is_some_and(|c| c.value(Key::AuthToken).is_some());
+        let token_entry = config.map(|c| c.get(Key::AuthToken));
+        let token_source = token_entry
+            .as_ref()
+            .and_then(|entry| entry.value.as_ref().map(|_| entry.source));
+        let env_override = matches!(token_source, Some(Provenance::Env(_)));
 
         let prefs = self.app_prefs.get().clone();
         if self.settings.remote_port.is_none() {
@@ -964,10 +971,25 @@ impl Shell {
         }
         let port_input = self.settings.remote_port.clone().expect("created above");
 
+        if self.settings.remote_token.is_none() {
+            let placeholder = i18n::t(cx, "settings_sheet.remote.token_placeholder");
+            let input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .masked(true)
+                    .placeholder(placeholder)
+            });
+            self.settings.remote_token = Some(input);
+        }
+        let token_input = self.settings.remote_token.clone().expect("created above");
+
         let (status_text, status_color) = match &status {
             Some(s) if s.running => (
                 i18n::t_args(cx, "settings_sheet.remote.running", &[("url", &s.url)]),
                 theme.success,
+            ),
+            Some(_) if token_source.is_none() => (
+                i18n::t(cx, "settings_sheet.remote.token_required"),
+                theme.warning,
             ),
             Some(s) => (
                 i18n::t_args(
@@ -982,16 +1004,23 @@ impl Shell {
                 theme.muted_foreground,
             ),
         };
-        let (token_text, token_color) = if token_set {
-            (
-                i18n::t(cx, "settings_sheet.remote.token_set"),
+        let (token_text, token_color) = match token_source {
+            Some(Provenance::Env(name)) => (
+                i18n::t_args(cx, "settings_sheet.remote.token_set_env", &[("name", name)]),
                 theme.success,
-            )
-        } else {
-            (
+            ),
+            Some(Provenance::Fed) => (
+                i18n::t(cx, "settings_sheet.remote.token_set_fed"),
+                theme.success,
+            ),
+            Some(Provenance::Global) => (
+                i18n::t(cx, "settings_sheet.remote.token_set_global"),
+                theme.success,
+            ),
+            _ => (
                 i18n::t(cx, "settings_sheet.remote.token_unset"),
                 theme.warning,
-            )
+            ),
         };
         let (tailscale_text, tailscale_color) = match tailscale {
             Some(ip) => (
@@ -1047,13 +1076,11 @@ impl Shell {
 
         let start_command = format!("frankmdfast --serve {quoted}");
         let headless_command = format!("frankmdfast --serve-only {quoted}");
-        let token_command = "openssl rand -hex 32".to_owned();
 
         let command_row = |id: &'static str, command: String| {
             let copy_id = match id {
                 "settings-remote-start" => "settings-remote-copy-start",
                 "settings-remote-headless" => "settings-remote-copy-headless",
-                "settings-remote-token" => "settings-remote-copy-token",
                 _ => "settings-remote-copy-url",
             };
             h_flex()
@@ -1091,13 +1118,32 @@ impl Shell {
                 })
         };
 
+        let generate_this = cx.entity().downgrade();
+        let generate = Button::new("settings-remote-token-generate")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.remote.token_generate"))
+            .on_click(move |_, window, cx| {
+                let _ =
+                    generate_this.update(cx, |shell, cx| shell.generate_remote_token(window, cx));
+            });
+        let save_this = cx.entity().downgrade();
+        let save = Button::new("settings-remote-token-save")
+            .small()
+            .primary()
+            .label(i18n::t(cx, "settings_sheet.remote.token_save"))
+            .on_click(move |_, window, cx| {
+                let _ = save_this.update(cx, |shell, cx| shell.save_remote_token(window, cx));
+            });
+
         v_flex()
             .id("settings-remote")
             .test_support()
+            .w_full()
+            .min_w_0()
             .gap_1()
             .pt_1()
             .child(title(i18n::t(cx, "settings_sheet.remote.title")))
-            .child(paragraph(i18n::t(cx, "settings_sheet.remote.intro")))
             .child(
                 h_flex()
                     .gap_3()
@@ -1138,15 +1184,25 @@ impl Shell {
             )
             .child(
                 h_flex()
+                    .w_full()
+                    .min_w_0()
                     .gap_2()
                     .items_center()
                     .child(
                         div()
+                            .flex_shrink_0()
                             .text_sm()
                             .font_semibold()
                             .child(i18n::t(cx, "settings_sheet.remote.status")),
                     )
-                    .child(div().text_sm().text_color(status_color).child(status_text)),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_sm()
+                            .text_color(status_color)
+                            .child(status_text),
+                    ),
             )
             .child(div().text_xs().text_color(token_color).child(token_text))
             .child(
@@ -1155,6 +1211,31 @@ impl Shell {
                     .text_color(tailscale_color)
                     .child(tailscale_text),
             )
+            .child(title(i18n::t(cx, "settings_sheet.remote.token_title")))
+            .child(paragraph(i18n::t(cx, "settings_sheet.remote.token_help")))
+            .child(
+                h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(Input::new(&token_input).id("settings-remote-token-input")),
+                    )
+                    .child(generate)
+                    .child(save),
+            )
+            .when(env_override, |el| {
+                el.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.warning)
+                        .child(i18n::t(cx, "settings_sheet.remote.token_env_override")),
+                )
+            })
             .child(title(i18n::t(cx, "settings_sheet.remote.how_to")))
             .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_start")))
             .child(command_row("settings-remote-start", start_command))
@@ -1163,8 +1244,6 @@ impl Shell {
                 "settings_sheet.remote.step_headless",
             )))
             .child(command_row("settings-remote-headless", headless_command))
-            .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_token")))
-            .child(command_row("settings-remote-token", token_command))
             .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_open")))
             .child(command_row("settings-remote-url", url))
             .child(title(i18n::t(cx, "settings_sheet.remote.security")))
@@ -1219,6 +1298,59 @@ impl Shell {
         }
         self.app_prefs.set_remote_port(port);
         self.refresh_remote(cx);
+        cx.notify();
+    }
+
+    /// Generate a 32-byte hex token, put it in the field and copy it.
+    pub(crate) fn generate_remote_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut bytes = [0u8; 32];
+        if let Err(err) = getrandom::fill(&mut bytes) {
+            tracing::error!(%err, "could not generate a remote token");
+            let message = i18n::t(cx, "settings_sheet.remote.token_generate_failed");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        use std::fmt::Write as _;
+        let mut token = String::with_capacity(64);
+        for byte in bytes {
+            let _ = write!(token, "{byte:02x}");
+        }
+        if let Some(input) = self.settings.remote_token.clone() {
+            input.update(cx, |state, cx| state.set_value(&token, window, cx));
+        }
+        cx.write_to_clipboard(ClipboardItem::new_string(token));
+        let message = i18n::t(cx, "settings_sheet.remote.token_generated");
+        self.show_message(&message, false, cx);
+        cx.notify();
+    }
+
+    /// Save the token field to the selected scope and restart the server.
+    pub(crate) fn save_remote_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(input) = self.settings.remote_token.clone() else {
+            return;
+        };
+        let token = input.read(cx).value().trim().to_owned();
+        if token.len() < 32 {
+            let message = i18n::t(cx, "settings_sheet.remote.token_too_short");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        let changes = vec![(Key::AuthToken, Some(Value::Str(token)))];
+        let cmd = match self.settings.scope {
+            Scope::Vault => Command::UpdateSettings { changes },
+            Scope::Global => Command::UpdateGlobalSettings { changes },
+        };
+        match self.dispatch_checked(cmd, window, cx) {
+            Ok(()) => {
+                let message = i18n::t(cx, "settings_sheet.remote.token_saved");
+                self.show_message(&message, false, cx);
+                self.refresh_remote(cx);
+            }
+            Err(err) => {
+                let message = i18n::t(cx, err.key);
+                self.show_message(&message, true, cx);
+            }
+        }
         cx.notify();
     }
 

@@ -468,7 +468,9 @@ fn settings_explains_remote_access(cx: &mut TestAppContext) {
         "settings-remote-bind-tailscale",
         "settings-remote-bind-loopback",
         "settings-remote-headless",
-        "settings-remote-token",
+        "settings-remote-token-input",
+        "settings-remote-token-generate",
+        "settings-remote-token-save",
         "settings-remote-url",
         "settings-remote-copy-url",
     ] {
@@ -476,4 +478,23 @@ fn settings_explains_remote_access(cx: &mut TestAppContext) {
         let present = harness::in_window(cx, w, |window, _| window.try_find(id).is_some());
         assert!(present, "{id}");
     }
+}
+
+// Settings › Remote can generate and persist an access token without editing .fed.
+#[gpui_kit::test]
+fn settings_can_generate_and_save_a_remote_token(cx: &mut TestAppContext) {
+    let shell = open_shell(cx, WIDE, VaultFixture::sample());
+    let w = shell.window;
+    harness::press(cx, w, "ctrl-2 ctrl-,");
+    click(cx, &shell, "settings-category-remote");
+    click(cx, &shell, "settings-remote-token-generate");
+    click(cx, &shell, "settings-remote-token-save");
+
+    let fed = std::fs::read_to_string(shell.root.join(".fed")).expect("read .fed");
+    let token = fed
+        .lines()
+        .find_map(|line| line.strip_prefix("auth_token = "))
+        .expect("auth_token written");
+    assert_eq!(token.trim().len(), 64, "{fed}");
+    assert!(token.trim().chars().all(|c| c.is_ascii_hexdigit()), "{fed}");
 }

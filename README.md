@@ -29,7 +29,7 @@
 ## Remote access (Tailscale) — start it from Settings
 
 <p align="center">
-  <img src="docs/remote-settings-panel.png" width="860" alt="Settings › Remote access: start on app launch, Tailscale/Loopback, port, running status, token and copy-ready commands">
+  <img src="docs/remote-settings-token.png" width="860" alt="Settings › Remote access: start on app launch, Tailscale/Loopback, port, access-token generate/save and copy-ready commands">
 </p>
 
 Serve this vault to a browser on another device on your Tailscale network,
@@ -38,6 +38,9 @@ without leaving the desktop app:
 - **Settings › Remote → Start on app launch** — a per-machine preference that
   starts the server immediately and on every next launch (Tailscale or
   Loopback, editable port).
+- **Access token right in the panel** — paste an existing token or click
+  **Generate token**, then **Save token**. It is written to `.fed` (This vault)
+  or the global config (All vaults); `FRANKMD_AUTH_TOKEN` overrides the file.
 - The browser editor has the file tree, autosave, live Markdown preview,
   search, settings, themes, media library/upload and AI actions.
 - Authentication is a mandatory token of at least 32 bytes (`auth_token` in

@@ -41,6 +41,7 @@ tracing-subscriber.workspace = true
 jiff.workspace = true
 async-channel.workspace = true
 serde_json.workspace = true
+getrandom.workspace = true
 
 # Embeds the app icon and version info in frankmd.exe (build.rs).
 [target.'cfg(windows)'.build-dependencies]
