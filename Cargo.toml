@@ -9,6 +9,7 @@ edition = "2024"
 # gpui-pre-platform pulls oo7 0.6, which needs 1.92. Keep in step with rust-toolchain.toml.
 rust-version = "1.92"
 license = "MIT"
+# Upstream repository; this fork lives at https://github.com/ghpo/FrankMDFast
 repository = "https://github.com/akitaonrails/FrankMDFast"
 publish = false
 

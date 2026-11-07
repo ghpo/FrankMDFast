@@ -10,6 +10,14 @@
   It aims to be a drop-in replacement: same <code>.fed</code> file, same environment variables, same notes on disk.
 </p>
 
+> **Fork notice** — This is a fork of
+> [akitaonrails/FrankMDFast](https://github.com/akitaonrails/FrankMDFast),
+> maintained by [ghpo](https://github.com/ghpo). Upstream is the original work;
+> this fork adds opt-in Tailscale remote access and is **not affiliated with or
+> endorsed by** the upstream author. See [FORK.md](FORK.md) for differences,
+> sync and reporting rules.
+>
+
 <p align="center">
   <img src="docs/screenshots/main.png" alt="FrankMD with a note in the editor and its live preview, following the Omarchy Tokyo Night theme">
 </p>
@@ -53,21 +61,20 @@ model, HTTP API and the systemd unit.
 
 ## Install
 
-FrankMDFast is the desktop version of [FrankMD](https://github.com/akitaonrails/FrankMD). It edits the
-same notes folder and `.fed` file and now also serves the vault to a browser on your Tailscale
-network (see [Remote access](#remote-access-tailscale--start-it-from-settings) above). The command is
-`frankmdfast`.
+To use **this fork** (with remote access), build it from source:
 
-Download the package for your system from [Releases](https://github.com/akitaonrails/FrankMDFast/releases):
-the AppImage or tarball on Linux, the DMG on macOS, the installer or zip on Windows.
-On Arch Linux: `yay -S frankmdfast-bin`.
+```bash
+cargo build --release -p frankmd-app
+# binary: target/release/frankmdfast
+```
 
-## This fork
+Requirements: Rust 1.92+ and the GPUI Linux dependencies documented by the
+upstream project.
 
-This repository is a fork of [akitaonrails/FrankMDFast](https://github.com/akitaonrails/FrankMDFast)
-that adds opt-in remote access over Tailscale (`--serve`). The upstream project
-remains the original work; this fork is not affiliated with or endorsed by it.
-The MIT license and copyright notices are kept unchanged.
+The upstream desktop app is available from
+[upstream Releases](https://github.com/akitaonrails/FrankMDFast/releases) and the
+`frankmdfast-bin` AUR package. Those packages do **not** include this fork's
+remote-access changes.
 
 ## Status
 
