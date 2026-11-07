@@ -471,6 +471,7 @@ fn settings_explains_remote_access(cx: &mut TestAppContext) {
         "settings-remote-token-input",
         "settings-remote-token-generate",
         "settings-remote-token-save",
+        "settings-remote-token-copy",
         "settings-remote-url",
         "settings-remote-copy-url",
     ] {

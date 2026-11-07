@@ -29,7 +29,7 @@
 ## Remote access (Tailscale) — start it from Settings
 
 <p align="center">
-  <img src="docs/remote-settings-token.png" width="860" alt="Settings › Remote access: start on app launch, Tailscale/Loopback, port, access-token generate/save and copy-ready commands">
+  <img src="docs/remote-settings-copy.png" width="860" alt="Settings › Remote access: start on app launch, Tailscale/Loopback, port, running status, generate/save/copy access token and the .fed destination">
 </p>
 
 Serve this vault to a browser on another device on your Tailscale network,
@@ -39,8 +39,9 @@ without leaving the desktop app:
   starts the server immediately and on every next launch (Tailscale or
   Loopback, editable port).
 - **Access token right in the panel** — paste an existing token or click
-  **Generate token**, then **Save token**. It is written to `.fed` (This vault)
-  or the global config (All vaults); `FRANKMD_AUTH_TOKEN` overrides the file.
+  **Generate token**, then **Save token** and **Copy token**. The panel shows
+  the exact destination: `.fed` (This vault) or the global config (All vaults);
+  `FRANKMD_AUTH_TOKEN` overrides the file.
 - The browser editor has the file tree, autosave, live Markdown preview,
   search, settings, themes, media library/upload and AI actions.
 - Authentication is a mandatory token of at least 32 bytes (`auth_token` in
@@ -54,6 +55,12 @@ frankmdfast --serve ~/notes        # desktop window + remote server
 # or headless: frankmdfast --serve-only ~/notes
 # then open http://<tailscale-ip>:8787 and paste the token
 ```
+
+**From another machine:** install Tailscale there, open
+`http://<tailscale-ip>:8787` in a browser and paste the token. No FrankMDFast
+install is needed — the browser is the remote client. If you want the native
+desktop app on the other machine, mount the notes folder with SSHFS and open it
+locally (there is no native remote-client mode yet).
 
 The default bind is the Tailscale address; `0.0.0.0`/LAN requires
 `--serve-bind-any`. See [docs/remote.md](docs/remote.md) for the security

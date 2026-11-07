@@ -981,6 +981,14 @@ impl Shell {
             self.settings.remote_token = Some(input);
         }
         let token_input = self.settings.remote_token.clone().expect("created above");
+        let save_path = match self.settings.scope {
+            Scope::Vault => self.vault_root.join(".fed").display().to_string(),
+            Scope::Global => self
+                .global_config
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_default(),
+        };
 
         let (status_text, status_color) = match &status {
             Some(s) if s.running => (
@@ -1135,6 +1143,14 @@ impl Shell {
             .on_click(move |_, window, cx| {
                 let _ = save_this.update(cx, |shell, cx| shell.save_remote_token(window, cx));
             });
+        let copy_token_this = cx.entity().downgrade();
+        let copy_token = Button::new("settings-remote-token-copy")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.remote.token_copy"))
+            .on_click(move |_, _, cx| {
+                let _ = copy_token_this.update(cx, |shell, cx| shell.copy_remote_token(cx));
+            });
 
         v_flex()
             .id("settings-remote")
@@ -1226,7 +1242,20 @@ impl Shell {
                             .child(Input::new(&token_input).id("settings-remote-token-input")),
                     )
                     .child(generate)
-                    .child(save),
+                    .child(save)
+                    .child(copy_token),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(theme.muted_foreground)
+                    .child(i18n::t_args(
+                        cx,
+                        "settings_sheet.remote.token_save_path",
+                        &[("path", &save_path)],
+                    )),
             )
             .when(env_override, |el| {
                 el.child(
@@ -1324,6 +1353,34 @@ impl Shell {
         cx.notify();
     }
 
+    /// Copy the effective token (field first, otherwise the saved/env one).
+    pub(crate) fn copy_remote_token(&mut self, cx: &mut Context<Self>) {
+        let from_input = self
+            .settings
+            .remote_token
+            .as_ref()
+            .map(|input| input.read(cx).value().trim().to_owned())
+            .filter(|token| !token.is_empty());
+        let token = from_input.or_else(|| {
+            self.core
+                .as_ref()
+                .and_then(|c| c.ws.snapshot().config.value(Key::AuthToken))
+                .and_then(|value| value.as_str().map(str::to_owned))
+        });
+        match token {
+            Some(token) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(token));
+                let message = i18n::t(cx, "settings_sheet.remote.token_copied");
+                self.show_message(&message, false, cx);
+            }
+            None => {
+                let message = i18n::t(cx, "settings_sheet.remote.token_none");
+                self.show_message(&message, true, cx);
+            }
+        }
+        cx.notify();
+    }
+
     /// Save the token field to the selected scope and restart the server.
     pub(crate) fn save_remote_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(input) = self.settings.remote_token.clone() else {
@@ -1335,13 +1392,14 @@ impl Shell {
             self.show_message(&message, true, cx);
             return;
         }
-        let changes = vec![(Key::AuthToken, Some(Value::Str(token)))];
+        let changes = vec![(Key::AuthToken, Some(Value::Str(token.clone())))];
         let cmd = match self.settings.scope {
             Scope::Vault => Command::UpdateSettings { changes },
             Scope::Global => Command::UpdateGlobalSettings { changes },
         };
         match self.dispatch_checked(cmd, window, cx) {
             Ok(()) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(token));
                 let message = i18n::t(cx, "settings_sheet.remote.token_saved");
                 self.show_message(&message, false, cx);
                 self.refresh_remote(cx);

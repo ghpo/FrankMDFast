@@ -130,6 +130,8 @@ pub struct Shell {
     pub(crate) vault_name: SharedString,
     /// Per-vault app state directory (remote server startup from Settings).
     pub(crate) state_dir: PathBuf,
+    /// Global settings file (Settings scope "All vaults").
+    pub(crate) global_config: Option<PathBuf>,
     pub(crate) core: Option<Core>,
     pub(crate) startup_error: Option<SharedString>,
     pub(crate) registry: CommandRegistry,
@@ -246,6 +248,7 @@ impl Shell {
             vault_root: config.vault_root.clone(),
             vault_name,
             state_dir: config.state_dir.clone(),
+            global_config: config.global_config.clone(),
             core,
             startup_error,
             registry: CommandRegistry::builtin(),

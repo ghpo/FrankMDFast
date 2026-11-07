@@ -51,10 +51,33 @@ keys.
 The **Access token** section generates a 32-byte token (copied to the
 clipboard), or accepts a pasted one, and saves it to the selected scope:
 *This vault* writes `auth_token` to `.fed`; *All vaults* writes it to the global
-config. If `FRANKMD_AUTH_TOKEN` is set, it overrides both and the panel warns
-about it.
+config. The panel shows the exact path it will write to. **Copy token** copies
+the effective token (the field value, or the saved/environment one). If
+`FRANKMD_AUTH_TOKEN` is set, it overrides both and the panel warns about it.
 
-![Settings › Remote](remote-settings-token.png)
+![Settings › Remote](remote-settings-copy.png)
+
+## Using it from another machine
+
+You do **not** install FrankMDFast on the other machine. The remote client is
+the browser:
+
+1. Connect that device to the same Tailscale tailnet.
+2. Open the URL shown in the panel (`http://<tailscale-ip>:8787`) in any
+   browser.
+3. Paste the access token on the login page.
+
+The web client has the file tree, editor with autosave, live preview, search,
+settings, themes, media library/upload and AI actions.
+
+The desktop app has **no native remote-client mode**; the Settings › Remote tab
+configures the server. If you want to use the native app on the other machine,
+mount the notes folder with SSHFS and open that folder:
+
+```bash
+sshfs user@host:~/notes ~/remote-notes
+# then: frankmdfast ~/remote-notes
+```
 
 ## Quick start
 
