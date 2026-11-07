@@ -41,6 +41,14 @@ the current session, the Tailscale address, whether a token is configured, and
 copy-ready commands for the desktop, headless, token and URL steps. You can also
 run the palette command **Remote access settings**.
 
+The panel also has **Start on app launch**, **Listen on** (Tailscale or
+Loopback) and **Port** controls. Enabling it starts the server immediately when
+a token is configured (otherwise the panel explains what is missing) and
+remembers the choice for the next launch. Bind/port changes restart the server.
+These are per-machine app preferences (the app state `prefs.json`), not `.fed`
+keys. The launch controls sit above the status line (the screenshot was taken
+before they were added):
+
 ![Settings › Remote](remote-settings.png)
 
 ## Quick start
@@ -51,6 +59,9 @@ Desktop window **and** remote server:
 frankmdfast --serve ~/notes
 # remote server ready url=http://100.69.202.87:8787
 ```
+
+Or enable it from **Settings › Remote → Start on app launch** (it starts at
+the next launch and immediately when toggled with a token configured).
 
 Headless server (no window, e.g. on a home server):
 
@@ -74,9 +85,9 @@ ssh -L 8787:127.0.0.1:8787 user@host
 |---|---|---|
 | `--serve` | off | Serve the vault and open the desktop window. |
 | `--serve-only` | off | Serve without GPUI; blocks until killed. |
-| `--serve-bind <spec>` | `tailscale` | `tailscale`, `loopback`, `any`, or an IP. |
+| `--serve-bind <spec>` | Settings (Tailscale) | `tailscale`, `loopback`, `any`, or an IP. |
 | `--serve-bind-any` | off | Allow `any` / a non-Tailscale address. Dangerous. |
-| `--serve-port <port>` | `8787` | Also `FRANKMD_REMOTE_PORT`. |
+| `--serve-port <port>` | Settings (8787) | Also `FRANKMD_REMOTE_PORT`. |
 | `--serve-token <token>` | — | Prefer `FRANKMD_AUTH_TOKEN` or `.fed`. |
 
 `--serve` and `--serve-only` skip single-instance forwarding: a second

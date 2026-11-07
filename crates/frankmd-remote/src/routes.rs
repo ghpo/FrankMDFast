@@ -141,6 +141,18 @@ pub fn build_router(state: Arc<ServerState>) -> Router {
 
 /// Bind the socket and serve until the process exits.
 pub async fn serve(state: Arc<ServerState>, addr: SocketAddr) -> std::io::Result<()> {
+    serve_until(state, addr, std::future::pending()).await
+}
+
+/// Bind the socket and serve until `shutdown` resolves (Settings toggle).
+pub async fn serve_until<F>(
+    state: Arc<ServerState>,
+    addr: SocketAddr,
+    shutdown: F,
+) -> std::io::Result<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(address = %addr, "FrankMDFast remote server listening");
@@ -148,6 +160,7 @@ pub async fn serve(state: Arc<ServerState>, addr: SocketAddr) -> std::io::Result
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown)
     .await
 }
 

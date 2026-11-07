@@ -28,7 +28,7 @@ pub mod web;
 pub use auth::{AuthConfig, AuthError, AuthVia};
 pub use bind::{BindSpec, is_tailscale_addr, resolve_bind, tailscale_ipv4};
 pub use error::ApiError;
-pub use routes::{build_router, serve};
+pub use routes::{build_router, serve, serve_until};
 pub use state::{RemoteConfig, ServerState};
 
 /// Default port for the remote web UI.

@@ -64,12 +64,17 @@ pub fn run() -> anyhow::Result<()> {
     tracing::info!(
         path = ?cli.path,
         locale = ?cli.locale,
-        serve = cli.serve || cli.serve_only,
         "starting FrankMDFast"
     );
 
     let env = EnvSnapshot::capture();
     let dirs = AppDirs::discover().ok_or_else(|| anyhow::anyhow!("no home directory"))?;
+    let prefs_file = dirs
+        .state
+        .join(frankmd_workspace::app_prefs::APP_PREFS_FILE);
+    let prefs = frankmd_workspace::app_prefs::AppPrefsStore::open(&prefs_file)
+        .get()
+        .clone();
     let home = env.present("HOME").map(PathBuf::from);
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let notes_path = env.present("NOTES_PATH").map(PathBuf::from);
@@ -80,10 +85,12 @@ pub fn run() -> anyhow::Result<()> {
         home.as_deref(),
     );
 
-    // Remote access is opt-in; prepare it before the single-instance check so
-    // `--serve-only` can run headless even when a desktop instance exists.
-    let remote = if cli.serve || cli.serve_only {
-        match remote::prepare(&cli, &launch, &env, &dirs) {
+    // Remote access is opt-in (CLI or Settings › Remote); prepare it before the
+    // single-instance check so `--serve-only` can run headless even when a
+    // desktop instance exists.
+    let remote_requested = cli.serve || cli.serve_only || prefs.remote_start;
+    let remote = if remote_requested {
+        match remote::prepare(&cli, &launch, &env, &dirs, &prefs) {
             Ok(plan) => Some(plan),
             Err(err) => {
                 if cli.serve_only {

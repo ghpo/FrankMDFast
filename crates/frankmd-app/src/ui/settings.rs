@@ -492,6 +492,8 @@ pub(crate) struct SettingsState {
     pub(crate) scope: Scope,
     /// Inputs of the text / secret rows, created on first render.
     inputs: std::collections::HashMap<Key, Entity<InputState>>,
+    /// Remote port input (Settings › Remote).
+    remote_port: Option<Entity<InputState>>,
     /// Secret rows whose "Change…" input is open.
     pub(crate) editing_secrets: std::collections::HashSet<Key>,
     /// Inline error of the last failed write, by key.
@@ -513,6 +515,7 @@ impl SettingsState {
                 search,
                 scope: Scope::default(),
                 inputs: Default::default(),
+                remote_port: None,
                 editing_secrets: Default::default(),
                 errors: Default::default(),
                 subscriptions: Vec::new(),
@@ -831,7 +834,7 @@ impl Shell {
         }
         if query.is_empty() && self.settings.category == Category::Remote {
             body.push(
-                self.render_remote_panel(&theme, config.as_deref(), cx)
+                self.render_remote_panel(&theme, config.as_deref(), window, cx)
                     .into_any_element(),
             );
         }
@@ -916,9 +919,10 @@ impl Shell {
     /// Settings › Remote: how to reach this vault from another device, plus
     /// the live status of the server started in this session.
     fn render_remote_panel(
-        &self,
+        &mut self,
         theme: &gpui_kit::component::theme::Theme,
         config: Option<&frankmd_config::ResolvedConfig>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let vault = self
@@ -940,6 +944,25 @@ impl Shell {
             .unwrap_or_else(|| format!("http://<tailscale-ip>:{port}"));
         let token_set = status.as_ref().is_some_and(|s| s.running)
             || config.is_some_and(|c| c.value(Key::AuthToken).is_some());
+
+        let prefs = self.app_prefs.get().clone();
+        if self.settings.remote_port.is_none() {
+            let input = cx
+                .new(|cx| InputState::new(window, cx).default_value(prefs.remote_port.to_string()));
+            let sub = cx.subscribe_in(
+                &input,
+                window,
+                |shell, input, ev: &InputEvent, _window, cx| {
+                    if matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                        let text = input.read(cx).value().to_string();
+                        shell.commit_remote_port(&text, cx);
+                    }
+                },
+            );
+            self.settings.subscriptions.push(sub);
+            self.settings.remote_port = Some(input);
+        }
+        let port_input = self.settings.remote_port.clone().expect("created above");
 
         let (status_text, status_color) = match &status {
             Some(s) if s.running => (
@@ -1040,13 +1063,79 @@ impl Shell {
                 .child(copy(copy_id, command))
         };
 
+        let toggle_this = cx.entity().downgrade();
+        let toggle = Switch::new("settings-remote-start")
+            .checked(prefs.remote_start)
+            .on_click(move |checked, _, cx| {
+                let enabled = *checked;
+                let _ = toggle_this.update(cx, |shell, cx| shell.set_remote_start(enabled, cx));
+            });
+        let bind_tailscale = {
+            let this = cx.entity().downgrade();
+            Button::new("settings-remote-bind-tailscale")
+                .small()
+                .selected(prefs.remote_bind == "tailscale")
+                .label(i18n::t(cx, "settings_sheet.remote.bind_tailscale"))
+                .on_click(move |_, _, cx| {
+                    let _ = this.update(cx, |shell, cx| shell.set_remote_bind("tailscale", cx));
+                })
+        };
+        let bind_loopback = {
+            let this = cx.entity().downgrade();
+            Button::new("settings-remote-bind-loopback")
+                .small()
+                .selected(prefs.remote_bind == "loopback")
+                .label(i18n::t(cx, "settings_sheet.remote.bind_loopback"))
+                .on_click(move |_, _, cx| {
+                    let _ = this.update(cx, |shell, cx| shell.set_remote_bind("loopback", cx));
+                })
+        };
+
         v_flex()
             .id("settings-remote")
             .test_support()
-            .gap_2()
+            .gap_1()
             .pt_1()
             .child(title(i18n::t(cx, "settings_sheet.remote.title")))
             .child(paragraph(i18n::t(cx, "settings_sheet.remote.intro")))
+            .child(
+                h_flex()
+                    .gap_3()
+                    .items_center()
+                    .flex_wrap()
+                    .child(
+                        h_flex().gap_2().items_center().child(toggle).child(
+                            div()
+                                .text_sm()
+                                .child(i18n::t(cx, "settings_sheet.remote.start_on_launch")),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(i18n::t(cx, "settings_sheet.remote.bind")),
+                    )
+                    .child(bind_tailscale)
+                    .child(bind_loopback)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(i18n::t(cx, "settings_sheet.remote.port")),
+                    )
+                    .child(
+                        div()
+                            .w(px(96.))
+                            .child(Input::new(&port_input).id("settings-remote-port")),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(i18n::t(cx, "settings_sheet.remote.restart_hint")),
+            )
             .child(
                 h_flex()
                     .gap_2()
@@ -1067,10 +1156,6 @@ impl Shell {
                     .child(tailscale_text),
             )
             .child(title(i18n::t(cx, "settings_sheet.remote.how_to")))
-            .child(paragraph(i18n::t(
-                cx,
-                "settings_sheet.remote.step_tailscale",
-            )))
             .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_start")))
             .child(command_row("settings-remote-start", start_command))
             .child(paragraph(i18n::t(
@@ -1080,10 +1165,6 @@ impl Shell {
             .child(command_row("settings-remote-headless", headless_command))
             .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_token")))
             .child(command_row("settings-remote-token", token_command))
-            .child(paragraph(i18n::t(
-                cx,
-                "settings_sheet.remote.step_save_token",
-            )))
             .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_open")))
             .child(command_row("settings-remote-url", url))
             .child(title(i18n::t(cx, "settings_sheet.remote.security")))
@@ -1092,6 +1173,107 @@ impl Shell {
                 "settings_sheet.remote.security_text",
             )))
             .into_any_element()
+    }
+
+    /// Settings › Remote toggle: start/stop the server now and remember the
+    /// choice for the next launch.
+    pub(crate) fn set_remote_start(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.app_prefs.set_remote_start(enabled);
+        if enabled {
+            match self.start_remote(cx) {
+                Ok(()) => {
+                    let text = i18n::t(cx, "settings_sheet.remote.started");
+                    self.show_message(&text, false, cx);
+                }
+                Err(err) => {
+                    crate::remote::record_error(&err);
+                    self.show_message(&err, true, cx);
+                }
+            }
+        } else {
+            crate::remote::stop_background();
+            let text = i18n::t(cx, "settings_sheet.remote.stopped");
+            self.show_message(&text, false, cx);
+        }
+        cx.notify();
+    }
+
+    /// Settings › Remote bind choice.
+    pub(crate) fn set_remote_bind(&mut self, bind: &str, cx: &mut Context<Self>) {
+        self.app_prefs.set_remote_bind(bind);
+        self.refresh_remote(cx);
+        cx.notify();
+    }
+
+    /// Settings › Remote port (committed on Enter/blur).
+    pub(crate) fn commit_remote_port(&mut self, text: &str, cx: &mut Context<Self>) {
+        let Ok(port) = text.trim().parse::<u16>() else {
+            let message = i18n::t(cx, "settings_sheet.remote.invalid_port");
+            self.show_message(&message, true, cx);
+            return;
+        };
+        if port == 0 {
+            let message = i18n::t(cx, "settings_sheet.remote.invalid_port");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        self.app_prefs.set_remote_port(port);
+        self.refresh_remote(cx);
+        cx.notify();
+    }
+
+    /// Restart a server that is already running (or configured to run).
+    fn refresh_remote(&mut self, cx: &mut Context<Self>) {
+        if !crate::remote::is_running() && !self.app_prefs.get().remote_start {
+            return;
+        }
+        crate::remote::stop_background();
+        match self.start_remote(cx) {
+            Ok(()) => {
+                let text = i18n::t(cx, "settings_sheet.remote.started");
+                self.show_message(&text, false, cx);
+            }
+            Err(err) => {
+                crate::remote::record_error(&err);
+                self.show_message(&err, true, cx);
+            }
+        }
+    }
+
+    /// Open a server from the current vault and app preferences.
+    fn start_remote(&mut self, cx: &mut Context<Self>) -> Result<(), SharedString> {
+        let Some(core) = self.core.as_ref() else {
+            return Err(i18n::t(cx, "settings_sheet.remote.vault_unavailable"));
+        };
+        let snapshot = core.ws.snapshot();
+        let Some(token) = snapshot
+            .config
+            .value(Key::AuthToken)
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .filter(|token| !token.trim().is_empty())
+        else {
+            return Err(i18n::t(cx, "settings_sheet.remote.token_required"));
+        };
+        let prefs = self.app_prefs.get().clone();
+        let request = crate::remote::RemoteRequest {
+            vault_root: self.vault_root.clone(),
+            state_dir: self.state_dir.clone(),
+            env: snapshot.config.env().clone(),
+            bind_spec: prefs.remote_bind.clone(),
+            bind_any: false,
+            port: prefs.remote_port,
+            token,
+            locale: self.locale_override.map(|locale| locale.code().to_owned()),
+        };
+        let runtime = cx
+            .try_global::<crate::bridge::tokio::NetRuntimeGlobal>()
+            .ok_or_else(|| i18n::t(cx, "settings_sheet.remote.runtime_unavailable"))?
+            .0
+            .clone();
+        let plan = crate::remote::prepare_request(&request)
+            .map_err(|err| SharedString::from(format!("{err:#}")))?;
+        crate::remote::start_background(&runtime, plan);
+        Ok(())
     }
 
     fn render_setting_row(

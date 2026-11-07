@@ -465,7 +465,8 @@ fn settings_explains_remote_access(cx: &mut TestAppContext) {
     click(cx, &shell, "settings-category-remote");
     for id in [
         "settings-remote",
-        "settings-remote-start",
+        "settings-remote-bind-tailscale",
+        "settings-remote-bind-loopback",
         "settings-remote-headless",
         "settings-remote-token",
         "settings-remote-url",

@@ -38,9 +38,11 @@ FRANKMD_AUTH_TOKEN="$(openssl rand -hex 32)" frankmdfast --serve-only ~/notes
 # open http://<tailscale-ip>:8787 and paste the token
 ```
 
-`--serve` keeps the desktop window and starts the server too. The default bind
-is the Tailscale address; `0.0.0.0` requires `--serve-bind-any`. A token of at
-least 32 bytes is mandatory. See [docs/remote.md](docs/remote.md) for the
+`--serve` keeps the desktop window and starts the server too. You can also
+enable **Settings › Remote → Start on app launch** (immediate + next launch,
+with Tailscale/Loopback and port controls). The default bind is the Tailscale
+address; `0.0.0.0` requires `--serve-bind-any`. A token of at least 32 bytes is
+mandatory. See [docs/remote.md](docs/remote.md) for the
 security model, API and a systemd unit. The same instructions are in
 **Settings › Remote** inside the app.
 

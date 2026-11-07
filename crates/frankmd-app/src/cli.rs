@@ -34,8 +34,8 @@ pub struct Cli {
     #[arg(long)]
     pub serve_only: bool,
     /// Bind target: `tailscale` (default), `loopback`, `any`, or an IP address.
-    #[arg(long, default_value = "tailscale")]
-    pub serve_bind: String,
+    #[arg(long)]
+    pub serve_bind: Option<String>,
     /// Allow binding a non-Tailscale, non-loopback address (dangerous).
     #[arg(long)]
     pub serve_bind_any: bool,
