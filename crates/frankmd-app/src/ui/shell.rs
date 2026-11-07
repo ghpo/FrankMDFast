@@ -44,6 +44,8 @@ pub struct ShellConfig {
     pub vault_root: PathBuf,
     /// Per-vault state directory outside the vault (drafts, DocId index), created if missing.
     pub state_dir: PathBuf,
+    /// App config directory (`~/.config/frankmdfast`) for the systemd user unit.
+    pub config_dir: PathBuf,
     /// Environment snapshot (config resolution).
     pub env: EnvSnapshot,
     /// Note to open at startup (`fed <path>`), vault-relative or absolute inside the vault.
@@ -130,6 +132,8 @@ pub struct Shell {
     pub(crate) vault_name: SharedString,
     /// Per-vault app state directory (remote server startup from Settings).
     pub(crate) state_dir: PathBuf,
+    /// App config directory (systemd user unit).
+    pub(crate) config_dir: PathBuf,
     /// Global settings file (Settings scope "All vaults").
     pub(crate) global_config: Option<PathBuf>,
     pub(crate) core: Option<Core>,
@@ -248,6 +252,7 @@ impl Shell {
             vault_root: config.vault_root.clone(),
             vault_name,
             state_dir: config.state_dir.clone(),
+            config_dir: config.config_dir.clone(),
             global_config: config.global_config.clone(),
             core,
             startup_error,

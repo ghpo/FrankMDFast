@@ -233,6 +233,7 @@ impl LaunchContext {
             .unwrap_or_else(|_| launch.vault_root.clone());
         let config = ui::ShellConfig {
             state_dir: self.dirs.vault_state(&real),
+            config_dir: self.dirs.config.clone(),
             vault_root: launch.vault_root,
             env: self.env.clone(),
             open: launch.open,

@@ -32,6 +32,8 @@ pub struct AppPrefs {
     pub remote_bind: String,
     /// Remote TCP port.
     pub remote_port: u16,
+    /// Start the remote server at login with a systemd user service.
+    pub remote_login: bool,
 }
 
 impl Default for AppPrefs {
@@ -41,6 +43,7 @@ impl Default for AppPrefs {
             remote_start: false,
             remote_bind: "tailscale".to_owned(),
             remote_port: DEFAULT_REMOTE_PORT,
+            remote_login: false,
         }
     }
 }
@@ -107,6 +110,14 @@ impl AppPrefsStore {
         }
     }
 
+    /// Start the remote server at login (systemd user service).
+    pub fn set_remote_login(&mut self, enabled: bool) {
+        if enabled != self.prefs.remote_login {
+            self.prefs.remote_login = enabled;
+            self.persist();
+        }
+    }
+
     /// Change the remote port (`0` resets to the default).
     pub fn set_remote_port(&mut self, port: u16) {
         let port = if port == 0 { DEFAULT_REMOTE_PORT } else { port };
@@ -159,10 +170,12 @@ mod tests {
         store.set_remote_start(true);
         store.set_remote_bind("loopback");
         store.set_remote_port(9000);
+        store.set_remote_login(true);
         let reloaded = AppPrefsStore::open(&file);
         assert!(reloaded.get().remote_start);
         assert_eq!(reloaded.get().remote_bind, "loopback");
         assert_eq!(reloaded.get().remote_port, 9000);
+        assert!(reloaded.get().remote_login);
 
         store.set_remote_bind("nonsense");
         assert_eq!(store.get().remote_bind, "loopback");

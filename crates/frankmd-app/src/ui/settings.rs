@@ -1126,6 +1126,33 @@ impl Shell {
                 })
         };
 
+        let running = status.as_ref().is_some_and(|status| status.running);
+        let start_stop = if running {
+            let this = cx.entity().downgrade();
+            Button::new("settings-remote-stop-now")
+                .small()
+                .outline()
+                .label(i18n::t(cx, "settings_sheet.remote.stop_server"))
+                .on_click(move |_, _, cx| {
+                    let _ = this.update(cx, |shell, cx| shell.stop_remote_now(cx));
+                })
+        } else {
+            let this = cx.entity().downgrade();
+            Button::new("settings-remote-start-now")
+                .small()
+                .primary()
+                .label(i18n::t(cx, "settings_sheet.remote.start_server"))
+                .on_click(move |_, _, cx| {
+                    let _ = this.update(cx, |shell, cx| shell.start_remote_now(cx));
+                })
+        };
+        let login_this = cx.entity().downgrade();
+        let login_switch = Switch::new("settings-remote-login")
+            .checked(prefs.remote_login)
+            .on_click(move |checked, _, cx| {
+                let _ = login_this.update(cx, |shell, cx| shell.set_remote_login(*checked, cx));
+            });
+
         let generate_this = cx.entity().downgrade();
         let generate = Button::new("settings-remote-token-generate")
             .small()
@@ -1227,6 +1254,35 @@ impl Shell {
                     .text_color(tailscale_color)
                     .child(tailscale_text),
             )
+            .child(
+                h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_3()
+                    .items_center()
+                    .flex_wrap()
+                    .child(start_stop)
+                    .child(login_switch)
+                    .child(
+                        div()
+                            .text_sm()
+                            .child(i18n::t(cx, "settings_sheet.remote.start_at_login")),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(i18n::t(cx, "settings_sheet.remote.login_hint")),
+            )
+            .when(prefs.remote_login && env_override, |el| {
+                el.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.warning)
+                        .child(i18n::t(cx, "settings_sheet.remote.login_token_warning")),
+                )
+            })
             .child(title(i18n::t(cx, "settings_sheet.remote.token_title")))
             .child(paragraph(i18n::t(cx, "settings_sheet.remote.token_help")))
             .child(
@@ -1283,25 +1339,112 @@ impl Shell {
             .into_any_element()
     }
 
-    /// Settings › Remote toggle: start/stop the server now and remember the
-    /// choice for the next launch.
+    /// Settings › Remote: remember the app-launch preference and apply it now.
     pub(crate) fn set_remote_start(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.app_prefs.set_remote_start(enabled);
         if enabled {
-            match self.start_remote(cx) {
+            self.start_remote_action(cx);
+        } else {
+            self.stop_remote_action(cx);
+        }
+        cx.notify();
+    }
+
+    /// Settings › Remote: start the server now (systemd unit or detached daemon).
+    pub(crate) fn start_remote_now(&mut self, cx: &mut Context<Self>) {
+        self.start_remote_action(cx);
+        cx.notify();
+    }
+
+    /// Settings › Remote: stop the server now, keeping the login unit enabled.
+    pub(crate) fn stop_remote_now(&mut self, cx: &mut Context<Self>) {
+        self.stop_remote_action(cx);
+        cx.notify();
+    }
+
+    fn start_remote_action(&mut self, cx: &mut Context<Self>) {
+        let result = if crate::remote::unit_enabled() {
+            crate::remote::start_unit().map_err(|err| SharedString::from(format!("{err:#}")))
+        } else {
+            self.remote_request(cx).and_then(|request| {
+                crate::remote::spawn_daemon_request(&request)
+                    .map(|_| ())
+                    .map_err(|err| SharedString::from(format!("{err:#}")))
+            })
+        };
+        match result {
+            Ok(()) => {
+                let text = i18n::t(cx, "settings_sheet.remote.started");
+                self.show_message(&text, false, cx);
+            }
+            Err(err) => {
+                crate::remote::record_error(&self.state_dir, &err);
+                self.show_message(&err, true, cx);
+            }
+        }
+    }
+
+    fn stop_remote_action(&mut self, cx: &mut Context<Self>) {
+        let result = if crate::remote::unit_enabled() {
+            crate::remote::stop_unit().map_err(|err| SharedString::from(format!("{err:#}")))
+        } else {
+            crate::remote::stop_daemon(&self.state_dir);
+            Ok(())
+        };
+        match result {
+            Ok(()) => {
+                let text = i18n::t(cx, "settings_sheet.remote.stopped");
+                self.show_message(&text, false, cx);
+            }
+            Err(err) => {
+                crate::remote::record_error(&self.state_dir, &err);
+                self.show_message(&err, true, cx);
+            }
+        }
+    }
+
+    /// Settings › Remote: enable/disable the systemd user unit that starts at login.
+    pub(crate) fn set_remote_login(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if enabled {
+            let env_token = self.core.as_ref().is_some_and(|core| {
+                matches!(
+                    core.ws.snapshot().config.get(Key::AuthToken).source,
+                    Provenance::Env(_)
+                )
+            });
+            if env_token {
+                let message = i18n::t(cx, "settings_sheet.remote.login_token_warning");
+                self.show_message(&message, true, cx);
+                cx.notify();
+                return;
+            }
+            let result = self.remote_request(cx).and_then(|request| {
+                crate::remote::enable_unit(&self.state_dir, &self.config_dir, &request)
+                    .map_err(|err| SharedString::from(format!("{err:#}")))
+            });
+            match result {
                 Ok(()) => {
-                    let text = i18n::t(cx, "settings_sheet.remote.started");
-                    self.show_message(&text, false, cx);
+                    self.app_prefs.set_remote_login(true);
+                    let message = i18n::t(cx, "settings_sheet.remote.login_enabled");
+                    self.show_message(&message, false, cx);
                 }
                 Err(err) => {
-                    crate::remote::record_error(&self.state_dir, &err);
                     self.show_message(&err, true, cx);
                 }
             }
         } else {
-            crate::remote::stop_daemon(&self.state_dir);
-            let text = i18n::t(cx, "settings_sheet.remote.stopped");
-            self.show_message(&text, false, cx);
+            let result = crate::remote::disable_unit(&self.state_dir)
+                .map_err(|err| SharedString::from(format!("{err:#}")));
+            match result {
+                Ok(()) => {
+                    self.app_prefs.set_remote_login(false);
+                    let message = i18n::t(cx, "settings_sheet.remote.login_disabled");
+                    self.show_message(&message, false, cx);
+                }
+                Err(err) => {
+                    self.show_message(&err, true, cx);
+                }
+            }
         }
         cx.notify();
     }
@@ -1412,26 +1555,38 @@ impl Shell {
         cx.notify();
     }
 
-    /// Restart a server that is already running (or configured to run).
+    /// Restart after bind/port/token changes: rewrite the login unit, or
+    /// restart the detached daemon.
     fn refresh_remote(&mut self, cx: &mut Context<Self>) {
+        if self.app_prefs.get().remote_login || crate::remote::unit_enabled() {
+            let result = self.remote_request(cx).and_then(|request| {
+                crate::remote::restart_unit(&self.config_dir, &request)
+                    .map_err(|err| SharedString::from(format!("{err:#}")))
+            });
+            match result {
+                Ok(()) => {
+                    let text = i18n::t(cx, "settings_sheet.remote.started");
+                    self.show_message(&text, false, cx);
+                }
+                Err(err) => {
+                    crate::remote::record_error(&self.state_dir, &err);
+                    self.show_message(&err, true, cx);
+                }
+            }
+            return;
+        }
         if !crate::remote::is_running(&self.state_dir) && !self.app_prefs.get().remote_start {
             return;
         }
         crate::remote::stop_daemon(&self.state_dir);
-        match self.start_remote(cx) {
-            Ok(()) => {
-                let text = i18n::t(cx, "settings_sheet.remote.started");
-                self.show_message(&text, false, cx);
-            }
-            Err(err) => {
-                crate::remote::record_error(&self.state_dir, &err);
-                self.show_message(&err, true, cx);
-            }
-        }
+        self.start_remote_action(cx);
     }
 
-    /// Open a server from the current vault and app preferences.
-    fn start_remote(&mut self, cx: &mut Context<Self>) -> Result<(), SharedString> {
+    /// Build the request used to spawn the daemon or write the login unit.
+    fn remote_request(
+        &self,
+        cx: &Context<Self>,
+    ) -> Result<crate::remote::RemoteRequest, SharedString> {
         let Some(core) = self.core.as_ref() else {
             return Err(i18n::t(cx, "settings_sheet.remote.vault_unavailable"));
         };
@@ -1445,7 +1600,7 @@ impl Shell {
             return Err(i18n::t(cx, "settings_sheet.remote.token_required"));
         };
         let prefs = self.app_prefs.get().clone();
-        let request = crate::remote::RemoteRequest {
+        Ok(crate::remote::RemoteRequest {
             vault_root: self.vault_root.clone(),
             state_dir: self.state_dir.clone(),
             env: snapshot.config.env().clone(),
@@ -1454,10 +1609,7 @@ impl Shell {
             port: prefs.remote_port,
             token,
             locale: self.locale_override.map(|locale| locale.code().to_owned()),
-        };
-        crate::remote::spawn_daemon_request(&request)
-            .map(|_| ())
-            .map_err(|err| SharedString::from(format!("{err:#}")))
+        })
     }
 
     fn render_setting_row(

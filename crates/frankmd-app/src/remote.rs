@@ -344,6 +344,136 @@ fn write_status(state_dir: &Path, status: &RemoteStatus) {
     }
 }
 
+const UNIT_NAME: &str = "frankmdfast-remote.service";
+
+/// Path of the systemd user unit managed by Settings › Remote.
+pub fn unit_path(config_dir: &Path) -> PathBuf {
+    // AppDirs.config is ~/.config/frankmdfast; systemd reads ~/.config/systemd/user.
+    config_dir
+        .parent()
+        .unwrap_or(config_dir)
+        .join("systemd")
+        .join("user")
+        .join(UNIT_NAME)
+}
+
+/// `true` when the login unit is enabled in the user manager.
+pub fn unit_enabled() -> bool {
+    std::process::Command::new("systemctl")
+        .args(["--user", "is-enabled", "--quiet", UNIT_NAME])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// Start the enabled login unit now.
+pub fn start_unit() -> anyhow::Result<()> {
+    systemctl(&["start", UNIT_NAME])
+}
+
+/// Stop the login unit without disabling it for the next login.
+pub fn stop_unit() -> anyhow::Result<()> {
+    systemctl(&["stop", UNIT_NAME])
+}
+
+/// Write, enable and start the login unit (stops a manual daemon first).
+pub fn enable_unit(
+    state_dir: &Path,
+    config_dir: &Path,
+    request: &RemoteRequest,
+) -> anyhow::Result<()> {
+    stop_daemon(state_dir);
+    write_unit(config_dir, request)?;
+    systemctl(&["daemon-reload"])?;
+    systemctl(&["enable", UNIT_NAME])?;
+    systemctl(&["restart", UNIT_NAME])?;
+    Ok(())
+}
+
+/// Disable and stop the login unit.
+pub fn disable_unit(state_dir: &Path) -> anyhow::Result<()> {
+    let _ = systemctl(&["disable", "--now", UNIT_NAME]);
+    let _ = systemctl(&["daemon-reload"]);
+    stop_daemon(state_dir);
+    Ok(())
+}
+
+/// Rewrite and restart the login unit after bind/port/token changes.
+pub fn restart_unit(config_dir: &Path, request: &RemoteRequest) -> anyhow::Result<()> {
+    write_unit(config_dir, request)?;
+    systemctl(&["daemon-reload"])?;
+    systemctl(&["restart", UNIT_NAME])?;
+    Ok(())
+}
+
+fn write_unit(config_dir: &Path, request: &RemoteRequest) -> anyhow::Result<()> {
+    let exe = std::env::current_exe().context("could not locate the FrankMDFast executable")?;
+    let mut args = format!(
+        "--serve-only --serve-bind {} --serve-port {}",
+        systemd_quote(&request.bind_spec),
+        request.port
+    );
+    if request.bind_any {
+        args.push_str(" --serve-bind-any");
+    }
+    if let Some(locale) = &request.locale {
+        args.push_str(&format!(" --locale {}", systemd_quote(locale)));
+    }
+    let unit = format!(
+        concat!(
+            "# Managed by FrankMDFast Settings › Remote.\n",
+            "# The access token is read from .fed/global config; save it in the panel.\n",
+            "[Unit]\n",
+            "Description=FrankMDFast remote server\n",
+            "After=network-online.target\n",
+            "Wants=network-online.target\n",
+            "\n",
+            "[Service]\n",
+            "Type=simple\n",
+            "ExecStart={} {} {}\n",
+            "Restart=on-failure\n",
+            "RestartSec=3\n",
+            "\n",
+            "[Install]\n",
+            "WantedBy=default.target\n",
+        ),
+        systemd_quote(&exe.display().to_string()),
+        args,
+        systemd_quote(&request.vault_root.display().to_string()),
+    );
+    let path = unit_path(config_dir);
+    if let Some(parent) = path.parent() {
+        crate::app_fs::ensure_private_dir(parent)?;
+    }
+    frankmd_fs::atomic::atomic_replace(
+        &path,
+        unit.as_bytes(),
+        frankmd_fs::atomic::ModePolicy::Fixed(0o644),
+    )?;
+    Ok(())
+}
+
+fn systemd_quote(value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
+fn systemctl(args: &[&str]) -> anyhow::Result<()> {
+    let output = std::process::Command::new("systemctl")
+        .arg("--user")
+        .args(args)
+        .output()
+        .context("could not run systemctl --user")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "systemctl --user {} failed: {}",
+            args.join(" "),
+            stderr.trim()
+        );
+    }
+    Ok(())
+}
+
 /// Is `pid` this fork's `--serve-only` daemon? Guards against PID reuse.
 #[cfg(target_os = "linux")]
 fn pid_alive(pid: u32) -> bool {
@@ -394,4 +524,43 @@ fn resolve_token(
         "remote access needs a token of at least 32 bytes: Settings › Remote → Access token, \
          export FRANKMD_AUTH_TOKEN, or set `auth_token = ...` in .fed"
     );
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn login_unit_lives_in_xdg_systemd_user() {
+        let config = PathBuf::from("/home/u/.config/frankmdfast");
+        assert_eq!(
+            unit_path(&config),
+            PathBuf::from("/home/u/.config/systemd/user/frankmdfast-remote.service")
+        );
+    }
+
+    #[test]
+    fn unit_file_quotes_paths_and_uses_serve_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path().join("frankmdfast");
+        let request = RemoteRequest {
+            vault_root: dir.path().join("my notes"),
+            state_dir: dir.path().join("state"),
+            env: EnvSnapshot::default(),
+            bind_spec: "loopback".to_owned(),
+            bind_any: false,
+            port: 8787,
+            token: "x".to_owned(),
+            locale: None,
+        };
+        write_unit(&config_dir, &request).unwrap();
+        let unit = std::fs::read_to_string(unit_path(&config_dir)).unwrap();
+        assert!(unit.contains("--serve-only"), "{unit}");
+        assert!(unit.contains("--serve-bind \"loopback\""), "{unit}");
+        assert!(unit.contains("--serve-port 8787"), "{unit}");
+        assert!(unit.contains("my notes"), "{unit}");
+        assert!(unit.contains("WantedBy=default.target"), "{unit}");
+        assert!(!unit.contains("FRANKMD_AUTH_TOKEN="), "{unit}");
+    }
 }

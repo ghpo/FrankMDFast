@@ -48,7 +48,16 @@ remembers the choice for the next launch. Bind/port changes restart the server.
 The server runs as a **detached `frankmdfast --serve-only` process** (one per
 vault). Settings and startup spawn it, and its PID/URL are kept in `remote.json`
 inside the per-vault state directory. Closing the desktop window with `SUPER+W`
-does **not** stop it; Settings › Remote stops it explicitly.
+does **not** stop it; use **Stop server** in Settings › Remote.
+
+**Start at login** writes and enables the user unit
+`~/.config/systemd/user/frankmdfast-remote.service`. Turn it off in Settings to
+disable and stop it. The unit reads the access token from `.fed`/global config
+(not from `FRANKMD_AUTH_TOKEN`), so save the token there first. It starts at
+login; enable lingering (`loginctl enable-linger "$USER"`) if you want it up
+before logging in. `Start server` / `Stop server` control the current process
+through systemd when the unit is enabled, otherwise through the detached
+daemon.
 
 These are per-machine app preferences (the app state `prefs.json`), not `.fed`
 keys.
@@ -231,7 +240,8 @@ Errors are `{"error": "...", "code": "..."}` with stable codes
 
 - Single user. The token is shared by every device you give it to.
 - The daemon keeps running until you stop it in Settings, log out, or reboot.
-  (Use the systemd unit below if you want it to start without opening the app.)
+  With **Start at login** enabled it comes back after a reboot at login (or at
+  boot with lingering).
 - No TLS of its own; Tailscale provides the encryption. Do not expose the port
   through a reverse proxy on the public internet.
 - The desktop app and the remote server share `.fed` and the same lock files,

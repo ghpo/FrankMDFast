@@ -104,6 +104,7 @@ pub fn open_shell(cx: &mut TestAppContext, size: Size<Pixels>, fixture: VaultFix
     let config = ShellConfig {
         vault_root: root.clone(),
         state_dir: state_dir.path().join("vault"),
+        config_dir: state_dir.path().join("config"),
         env: EnvSnapshot::default(),
         open: fixture.open.map(str::to_owned),
         clock: Arc::new(frankmd_core::SystemClock),

@@ -44,7 +44,9 @@ without leaving the desktop app:
   `FRANKMD_AUTH_TOKEN` overrides the file.
 - **It keeps serving after you close the window** — the server runs as a
   detached `frankmdfast --serve-only` daemon; `SUPER+W` does not stop it.
-  Settings › Remote starts/stops the daemon.
+  Settings › Remote has explicit **Start server** / **Stop server** buttons.
+- **Start at login** — enable the systemd user unit from Settings › Remote to
+  start the server when you log in. For boot before login, enable lingering.
 - The browser editor has the file tree, autosave, live Markdown preview,
   search, settings, themes, media library/upload and AI actions.
 - Authentication is a mandatory token of at least 32 bytes (`auth_token` in
