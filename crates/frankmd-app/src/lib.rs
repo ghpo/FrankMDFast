@@ -11,6 +11,7 @@ pub mod cli;
 pub mod dialogs;
 pub mod editor;
 pub mod preview;
+pub mod remote;
 pub mod scale;
 pub mod ui;
 
@@ -60,7 +61,12 @@ pub const APP_ID: &str = "frankmdfast";
 pub fn run() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
     init_tracing();
-    tracing::info!(?cli, "starting FrankMDFast");
+    tracing::info!(
+        path = ?cli.path,
+        locale = ?cli.locale,
+        serve = cli.serve || cli.serve_only,
+        "starting FrankMDFast"
+    );
 
     let env = EnvSnapshot::capture();
     let dirs = AppDirs::discover().ok_or_else(|| anyhow::anyhow!("no home directory"))?;
@@ -74,9 +80,37 @@ pub fn run() -> anyhow::Result<()> {
         home.as_deref(),
     );
 
+    // Remote access is opt-in; prepare it before the single-instance check so
+    // `--serve-only` can run headless even when a desktop instance exists.
+    let remote = if cli.serve || cli.serve_only {
+        match remote::prepare(&cli, &launch, &env, &dirs) {
+            Ok(plan) => Some(plan),
+            Err(err) => {
+                if cli.serve_only {
+                    return Err(err);
+                }
+                tracing::error!(%err, "remote server not started");
+                eprintln!("FrankMDFast: remote server not started: {err:#}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if cli.serve_only {
+        let plan = remote.ok_or_else(|| anyhow::anyhow!("remote server not prepared"))?;
+        let runtime = frankmd_net::NetRuntime::new()?;
+        tracing::info!(url = %plan.url, "serving without a window");
+        runtime
+            .handle()
+            .block_on(frankmd_remote::serve(plan.state, plan.addr))?;
+        return Ok(());
+    }
+
     // Single instance (OM-021): hand the request to a running FrankMD.
     let socket = cli::socket_path(env.present("XDG_RUNTIME_DIR").map(Path::new), &dirs.state);
-    if !cli.new_instance && cli::forward(&socket, &launch) {
+    if !cli.new_instance && !cli.serve && cli::forward(&socket, &launch) {
         tracing::info!("forwarded to the running instance");
         return Ok(());
     }
@@ -111,7 +145,13 @@ pub fn run() -> anyhow::Result<()> {
         ui::actions::install_keymap(cx);
         dialogs::media::init(cx);
         match frankmd_net::NetRuntime::new() {
-            Ok(rt) => cx.set_global(bridge::tokio::NetRuntimeGlobal(Arc::new(rt))),
+            Ok(rt) => {
+                let rt = Arc::new(rt);
+                cx.set_global(bridge::tokio::NetRuntimeGlobal(Arc::clone(&rt)));
+                if let Some(plan) = remote.clone() {
+                    remote::start_background(&rt, plan);
+                }
+            }
             Err(err) => tracing::error!(%err, "network runtime unavailable"),
         }
         // Without a menu bar macOS has no ⌘Q key equivalent (#4); the

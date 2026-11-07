@@ -1,0 +1,43 @@
+[package]
+name = "frankmd-remote"
+description = "FrankMDFast remote web access: Tailscale-only HTTP/SSE server and browser editor."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+frankmd-core.workspace = true
+frankmd-fs.workspace = true
+frankmd-config.workspace = true
+frankmd-i18n.workspace = true
+frankmd-markdown.workspace = true
+frankmd-search.workspace = true
+frankmd-media.workspace = true
+frankmd-ai.workspace = true
+frankmd-net.workspace = true
+frankmd-theme.workspace = true
+frankmd-watch.workspace = true
+
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+mime_guess.workspace = true
+jiff.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+http-body-util.workspace = true
+tower = { workspace = true, features = ["util"] }
+
+[lints]
+workspace = true

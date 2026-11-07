@@ -28,6 +28,21 @@ Download the package for your system from [Releases](https://github.com/akitaonr
 the AppImage or tarball on Linux, the DMG on macOS, the installer or zip on Windows.
 On Arch Linux: `yay -S frankmdfast-bin`.
 
+## Remote access (Tailscale)
+
+FrankMDFast can serve the same vault to a browser on another machine on your
+Tailscale network:
+
+```bash
+FRANKMD_AUTH_TOKEN="$(openssl rand -hex 32)" frankmdfast --serve-only ~/notes
+# open http://<tailscale-ip>:8787 and paste the token
+```
+
+`--serve` keeps the desktop window and starts the server too. The default bind
+is the Tailscale address; `0.0.0.0` requires `--serve-bind-any`. A token of at
+least 32 bytes is mandatory. See [docs/remote.md](docs/remote.md) for the
+security model, API and a systemd unit.
+
 ## Status
 
 Every domain crate is implemented and passes its ported FrankMD tests and golden cases. The GPUI

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FrankMDFast — Sign in</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: #1a1b26; color: #c0caf5;
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { width: min(92vw, 380px); padding: 28px; border: 1px solid #2f334d;
+      border-radius: 12px; background: #16161e; }
+    h1 { margin: 0 0 4px; font-size: 20px; }
+    p { margin: 0 0 20px; color: #7aa2f7; }
+    label { display: block; font-size: 13px; margin-bottom: 6px; color: #a9b1d6; }
+    input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #2f334d;
+      background: #1f2335; color: inherit; font: inherit; }
+    input:focus { outline: 2px solid #7aa2f7; outline-offset: 1px; }
+    button { width: 100%; margin-top: 16px; padding: 10px; border: 0; border-radius: 8px;
+      background: #7aa2f7; color: #16161e; font: inherit; font-weight: 600; cursor: pointer; }
+    button:hover { background: #89b4fa; }
+    .error { display: none; margin-top: 12px; color: #f7768e; font-size: 13px; }
+    .error.show { display: block; }
+    small { display: block; margin-top: 18px; color: #565f89; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>FrankMDFast</h1>
+    <p>Remote notes access</p>
+    <form method="post" action="/login">
+      <label for="password">Access token</label>
+      <input id="password" name="password" type="password" autocomplete="current-password"
+             autofocus required minlength="32">
+      <button type="submit">Sign in</button>
+    </form>
+    <p id="error" class="error">Invalid access token.</p>
+    <small>Only devices on this Tailscale network can reach this server.</small>
+  </main>
+  <script src="/assets/login.js" defer></script>
+</body>
+</html>

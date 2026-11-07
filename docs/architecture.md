@@ -63,6 +63,9 @@ crates/
                      (DocId-keyed, on disk under the state dir), DocId index, startup, shell view
                      models (layout, focus, overlays, command registry, quick open, banners, status)
                                                    deps: core, fs, config, watch, search (+ markdown, i18n)
+  frankmd-remote     optional remote web UI: axum HTTP/SSE, Tailscale bind policy, token auth,
+                     embedded SPA                                          deps: core, fs, config, markdown,
+                                                                           search, media, ai, net, watch
   frankmd-app        GPUI views + bridges (tokio, theme, vim, assets); binary `frankmd`
 ```
 
@@ -412,5 +415,6 @@ with `../../../assets/...` relative paths.
 - Exact Phosphor ↔ Lucide alias table. To be written with the icon work.
 - Whether to vendor `gpui-bidi` for preview RTL (gpui-stack.md §7).
 - Whether `gpui-fast` replaces the upstream snapshot (spike S8).
-- Remote/LAN mode: not planned. If it's ever added: loopback by default, auth, opt-in
-  (HP-023).
+- Remote/LAN mode: implemented as an opt-in crate (`frankmd-remote`): Tailscale
+  bind by default, mandatory >= 32-byte token, loopback as an alternative, no
+  wildcard bind without an explicit flag (HP-023). See `docs/remote.md`.

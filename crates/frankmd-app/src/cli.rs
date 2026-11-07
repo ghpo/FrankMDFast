@@ -27,6 +27,25 @@ pub struct Cli {
     /// Always start a new instance (don't forward to a running one).
     #[arg(long)]
     pub new_instance: bool,
+    /// Serve this vault over HTTP on the Tailscale network (opens the window too).
+    #[arg(long)]
+    pub serve: bool,
+    /// Serve without opening a window (headless remote server).
+    #[arg(long)]
+    pub serve_only: bool,
+    /// Bind target: `tailscale` (default), `loopback`, `any`, or an IP address.
+    #[arg(long, default_value = "tailscale")]
+    pub serve_bind: String,
+    /// Allow binding a non-Tailscale, non-loopback address (dangerous).
+    #[arg(long)]
+    pub serve_bind_any: bool,
+    /// Remote port (default 8787, or FRANKMD_REMOTE_PORT).
+    #[arg(long)]
+    pub serve_port: Option<u16>,
+    /// Access token (>= 32 bytes). Prefer FRANKMD_AUTH_TOKEN or `.fed auth_token`
+    /// (a flag is visible in `ps`).
+    #[arg(long)]
+    pub serve_token: Option<String>,
 }
 
 /// What to open.

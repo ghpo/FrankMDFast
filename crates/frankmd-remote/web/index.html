@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>FrankMDFast — Remote</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <header id="topbar">
+    <button id="toggle-sidebar" class="icon" title="Toggle explorer">☰</button>
+    <div id="crumb"><span id="vault-name">notes</span><span id="doc-name"></span></div>
+    <div class="spacer"></div>
+    <span id="save-status" class="status"></span>
+    <button id="btn-finder" class="icon" title="Find file (Ctrl+P)">⌕</button>
+    <button id="btn-search" class="icon" title="Search in files (Ctrl+Shift+F)">⌕⁺</button>
+    <button id="btn-new-note" class="icon" title="New note (Ctrl+N)">＋</button>
+    <button id="btn-ai" class="icon" title="Fix grammar with AI">✎</button>
+    <button id="btn-ai-image" class="icon" title="Generate an image with AI">✦</button>
+    <button id="btn-theme" class="icon" title="Theme">◐</button>
+    <button id="btn-settings" class="icon" title="Settings">⚙</button>
+    <button id="btn-library" class="icon" title="Media library">▦</button>
+    <button id="btn-logout" class="icon" title="Log out">⏻</button>
+  </header>
+
+  <div id="layout">
+    <aside id="sidebar">
+      <div class="side-search">
+        <input id="filter" type="search" placeholder="Filter notes…" autocomplete="off">
+      </div>
+      <nav id="tree" aria-label="Notes"></nav>
+      <div id="recent-box">
+        <h3>Recently opened</h3>
+        <ul id="recent"></ul>
+      </div>
+    </aside>
+
+    <main id="workspace">
+      <section id="editor-pane">
+        <div id="editor-meta">
+          <span id="editor-path"></span>
+          <span id="editor-stats"></span>
+        </div>
+        <textarea id="editor" spellcheck="true" placeholder="Select a note, or create one with Ctrl+N"></textarea>
+      </section>
+      <section id="preview-pane">
+        <article id="preview" class="markdown-body"></article>
+      </section>
+    </main>
+  </div>
+
+  <div id="overlay" class="hidden">
+    <div id="overlay-card">
+      <div id="overlay-head">
+        <strong id="overlay-title"></strong>
+        <button id="overlay-close" class="icon">✕</button>
+      </div>
+      <div id="overlay-body"></div>
+    </div>
+  </div>
+
+  <div id="menu" class="hidden"></div>
+  <div id="toast" class="hidden"></div>
+</body>
+</html>
