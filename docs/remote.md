@@ -34,6 +34,15 @@ Generate one with:
 openssl rand -hex 32
 ```
 
+## In the app
+
+Open **Settings › Remote**. That panel shows whether the server is running in
+the current session, the Tailscale address, whether a token is configured, and
+copy-ready commands for the desktop, headless, token and URL steps. You can also
+run the palette command **Remote access settings**.
+
+![Settings › Remote](remote-settings.png)
+
 ## Quick start
 
 Desktop window **and** remote server:

@@ -4,9 +4,9 @@
 //! auth_token` > `auth_token` from the global config layer. A missing or short
 //! token is a hard error: the server never starts unauthenticated.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context as _, bail};
 use frankmd_config::dirs::AppDirs;
@@ -15,6 +15,52 @@ use frankmd_fs::Vault;
 use frankmd_remote::{RemoteConfig, ServerState};
 
 use crate::cli::{Cli, Launch};
+
+/// What the current desktop session knows about the remote server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteStatus {
+    /// The server task has been started.
+    pub running: bool,
+    /// Advertised URL (`http://<ip>:<port>`).
+    pub url: String,
+    /// TCP port.
+    pub port: u16,
+    /// Startup/bind failure, if any.
+    pub error: Option<String>,
+}
+
+static STATUS: Mutex<Option<RemoteStatus>> = Mutex::new(None);
+static TAILSCALE: OnceLock<Option<IpAddr>> = OnceLock::new();
+
+/// Remote status of this process (read by Settings › Remote).
+pub fn status() -> Option<RemoteStatus> {
+    STATUS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Cached Tailscale IPv4 probe (spawning `tailscale` on every repaint is too
+/// expensive; the address changes only when Tailscale restarts).
+pub fn tailscale_ipv4_cached() -> Option<IpAddr> {
+    *TAILSCALE.get_or_init(frankmd_remote::tailscale_ipv4)
+}
+
+fn set_status(status: RemoteStatus) {
+    *STATUS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(status);
+}
+
+/// Record a failure so Settings can explain why remote access is off.
+pub fn record_error(message: &str) {
+    set_status(RemoteStatus {
+        running: false,
+        url: String::new(),
+        port: frankmd_remote::DEFAULT_PORT,
+        error: Some(message.to_owned()),
+    });
+}
 
 /// A server ready to bind.
 #[derive(Clone)]
@@ -74,10 +120,22 @@ pub fn prepare(
 
 /// Start serving on the app's tokio runtime (the handle is detached).
 pub fn start_background(runtime: &frankmd_net::NetRuntime, launch: RemoteLaunch) {
-    let url = launch.url.clone();
+    let RemoteLaunch { state, addr, url } = launch;
+    set_status(RemoteStatus {
+        running: true,
+        url: url.clone(),
+        port: addr.port(),
+        error: None,
+    });
     runtime.spawn(async move {
-        if let Err(err) = frankmd_remote::serve(launch.state, launch.addr).await {
+        if let Err(err) = frankmd_remote::serve(state, addr).await {
             tracing::error!(%err, %url, "remote server stopped");
+            set_status(RemoteStatus {
+                running: false,
+                url,
+                port: addr.port(),
+                error: Some(err.to_string()),
+            });
         }
     });
 }

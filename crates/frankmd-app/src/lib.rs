@@ -91,6 +91,7 @@ pub fn run() -> anyhow::Result<()> {
                 }
                 tracing::error!(%err, "remote server not started");
                 eprintln!("FrankMDFast: remote server not started: {err:#}");
+                remote::record_error(&format!("{err:#}"));
                 None
             }
         }

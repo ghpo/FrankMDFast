@@ -41,7 +41,15 @@ FRANKMD_AUTH_TOKEN="$(openssl rand -hex 32)" frankmdfast --serve-only ~/notes
 `--serve` keeps the desktop window and starts the server too. The default bind
 is the Tailscale address; `0.0.0.0` requires `--serve-bind-any`. A token of at
 least 32 bytes is mandatory. See [docs/remote.md](docs/remote.md) for the
-security model, API and a systemd unit.
+security model, API and a systemd unit. The same instructions are in
+**Settings › Remote** inside the app.
+
+## This fork
+
+This repository is a fork of [akitaonrails/FrankMDFast](https://github.com/akitaonrails/FrankMDFast)
+that adds opt-in remote access over Tailscale (`--serve`). The upstream project
+remains the original work; this fork is not affiliated with or endorsed by it.
+The MIT license and copyright notices are kept unchanged.
 
 ## Status
 

@@ -455,3 +455,24 @@ fn recovery_diff_is_unified_when_narrow(cx: &mut TestAppContext) {
     click(cx, &shell, "recovery-restore-draft");
     assert_eq!(shell.overlay(cx), None);
 }
+
+// Settings › Remote explains how to open this vault from another device.
+#[gpui_kit::test]
+fn settings_explains_remote_access(cx: &mut TestAppContext) {
+    let shell = open_shell(cx, WIDE, VaultFixture::sample());
+    let w = shell.window;
+    harness::press(cx, w, "ctrl-2 ctrl-,");
+    click(cx, &shell, "settings-category-remote");
+    for id in [
+        "settings-remote",
+        "settings-remote-start",
+        "settings-remote-headless",
+        "settings-remote-token",
+        "settings-remote-url",
+        "settings-remote-copy-url",
+    ] {
+        // Lower rows live below the fold; existence is what matters here.
+        let present = harness::in_window(cx, w, |window, _| window.try_find(id).is_some());
+        assert!(present, "{id}");
+    }
+}

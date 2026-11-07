@@ -3,7 +3,8 @@
 //! Changes apply live and are written to `.fed` through the workspace.
 //!
 //! Categories: Appearance, Editor, Writing, Preview, Files, Media,
-//! Integrations, Hugo, Diagnostics (config sources) and About. The scope
+//! Integrations, Remote (how to access this vault from another device), Hugo,
+//! Diagnostics (config sources) and About. The scope
 //! toggle picks where edits go: *This vault* writes `.fed`, *All vaults* the
 //! global `config.toml` (both through `frankmd-config`). Secrets are never
 //! shown or echoed: a set secret reads "Set", and replacing one uses a
@@ -35,13 +36,14 @@ pub(crate) enum Category {
     Files,
     Media,
     Integrations,
+    Remote,
     Hugo,
     Diagnostics,
     About,
 }
 
 impl Category {
-    const ALL: [Category; 10] = [
+    const ALL: [Category; 11] = [
         Self::Appearance,
         Self::Editor,
         Self::Writing,
@@ -49,6 +51,7 @@ impl Category {
         Self::Files,
         Self::Media,
         Self::Integrations,
+        Self::Remote,
         Self::Hugo,
         Self::Diagnostics,
         Self::About,
@@ -63,6 +66,7 @@ impl Category {
             Self::Files => "files",
             Self::Media => "media",
             Self::Integrations => "integrations",
+            Self::Remote => "remote",
             Self::Hugo => "hugo",
             Self::Diagnostics => "diagnostics",
             Self::About => "about",
@@ -825,6 +829,12 @@ impl Shell {
                     .into_any_element(),
             );
         }
+        if query.is_empty() && self.settings.category == Category::Remote {
+            body.push(
+                self.render_remote_panel(&theme, config.as_deref(), cx)
+                    .into_any_element(),
+            );
+        }
         if body.is_empty() {
             body.push(
                 div()
@@ -901,6 +911,187 @@ impl Shell {
                             .children(body),
                     ),
             )
+    }
+
+    /// Settings › Remote: how to reach this vault from another device, plus
+    /// the live status of the server started in this session.
+    fn render_remote_panel(
+        &self,
+        theme: &gpui_kit::component::theme::Theme,
+        config: Option<&frankmd_config::ResolvedConfig>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let vault = self
+            .core
+            .as_ref()
+            .map(|c| c.vault.root().display().to_string())
+            .unwrap_or_default();
+        let quoted = shell_quote(&vault);
+        let status = crate::remote::status();
+        let tailscale = crate::remote::tailscale_ipv4_cached();
+        let port = status
+            .as_ref()
+            .map_or(frankmd_remote::DEFAULT_PORT, |s| s.port);
+        let url = status
+            .as_ref()
+            .map(|s| s.url.clone())
+            .filter(|url| !url.is_empty())
+            .or_else(|| tailscale.map(|ip| format!("http://{ip}:{port}")))
+            .unwrap_or_else(|| format!("http://<tailscale-ip>:{port}"));
+        let token_set = status.as_ref().is_some_and(|s| s.running)
+            || config.is_some_and(|c| c.value(Key::AuthToken).is_some());
+
+        let (status_text, status_color) = match &status {
+            Some(s) if s.running => (
+                i18n::t_args(cx, "settings_sheet.remote.running", &[("url", &s.url)]),
+                theme.success,
+            ),
+            Some(s) => (
+                i18n::t_args(
+                    cx,
+                    "settings_sheet.remote.start_failed",
+                    &[("error", s.error.as_deref().unwrap_or(""))],
+                ),
+                theme.danger,
+            ),
+            None => (
+                i18n::t(cx, "settings_sheet.remote.not_running"),
+                theme.muted_foreground,
+            ),
+        };
+        let (token_text, token_color) = if token_set {
+            (
+                i18n::t(cx, "settings_sheet.remote.token_set"),
+                theme.success,
+            )
+        } else {
+            (
+                i18n::t(cx, "settings_sheet.remote.token_unset"),
+                theme.warning,
+            )
+        };
+        let (tailscale_text, tailscale_color) = match tailscale {
+            Some(ip) => (
+                i18n::t_args(
+                    cx,
+                    "settings_sheet.remote.tailscale",
+                    &[("ip", &ip.to_string())],
+                ),
+                theme.muted_foreground,
+            ),
+            None => (
+                i18n::t(cx, "settings_sheet.remote.no_tailscale"),
+                theme.warning,
+            ),
+        };
+
+        let title = |text: SharedString| div().text_sm().font_semibold().child(text);
+        let paragraph = |text: SharedString| {
+            div()
+                .w_full()
+                .min_w_0()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(text)
+        };
+        let code = |id: &'static str, text: String| {
+            div()
+                .id(id)
+                .test_support()
+                .w_full()
+                .font_family(theme.mono_font_family.clone())
+                .text_xs()
+                .px_2()
+                .py_1()
+                .rounded(theme.radius)
+                .bg(theme.muted)
+                .child(text)
+        };
+        let code_row = |id: &'static str, text: String| code(id, text).flex_1().min_w_0();
+        let copy = |id: &'static str, text: String| {
+            let this = cx.entity().downgrade();
+            let label = i18n::t(cx, "settings_sheet.remote.copy");
+            Button::new(id)
+                .small()
+                .outline()
+                .label(label)
+                .on_click(move |_, _, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                    let message = i18n::t(cx, "settings_sheet.remote.copied");
+                    let _ = this.update(cx, |shell, cx| shell.show_message(&message, false, cx));
+                })
+        };
+
+        let start_command = format!("frankmdfast --serve {quoted}");
+        let headless_command = format!("frankmdfast --serve-only {quoted}");
+        let token_command = "openssl rand -hex 32".to_owned();
+
+        let command_row = |id: &'static str, command: String| {
+            let copy_id = match id {
+                "settings-remote-start" => "settings-remote-copy-start",
+                "settings-remote-headless" => "settings-remote-copy-headless",
+                "settings-remote-token" => "settings-remote-copy-token",
+                _ => "settings-remote-copy-url",
+            };
+            h_flex()
+                .gap_2()
+                .items_center()
+                .child(code_row(id, command.clone()))
+                .child(copy(copy_id, command))
+        };
+
+        v_flex()
+            .id("settings-remote")
+            .test_support()
+            .gap_2()
+            .pt_1()
+            .child(title(i18n::t(cx, "settings_sheet.remote.title")))
+            .child(paragraph(i18n::t(cx, "settings_sheet.remote.intro")))
+            .child(
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_semibold()
+                            .child(i18n::t(cx, "settings_sheet.remote.status")),
+                    )
+                    .child(div().text_sm().text_color(status_color).child(status_text)),
+            )
+            .child(div().text_xs().text_color(token_color).child(token_text))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(tailscale_color)
+                    .child(tailscale_text),
+            )
+            .child(title(i18n::t(cx, "settings_sheet.remote.how_to")))
+            .child(paragraph(i18n::t(
+                cx,
+                "settings_sheet.remote.step_tailscale",
+            )))
+            .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_start")))
+            .child(command_row("settings-remote-start", start_command))
+            .child(paragraph(i18n::t(
+                cx,
+                "settings_sheet.remote.step_headless",
+            )))
+            .child(command_row("settings-remote-headless", headless_command))
+            .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_token")))
+            .child(command_row("settings-remote-token", token_command))
+            .child(paragraph(i18n::t(
+                cx,
+                "settings_sheet.remote.step_save_token",
+            )))
+            .child(paragraph(i18n::t(cx, "settings_sheet.remote.step_open")))
+            .child(command_row("settings-remote-url", url))
+            .child(title(i18n::t(cx, "settings_sheet.remote.security")))
+            .child(paragraph(i18n::t(
+                cx,
+                "settings_sheet.remote.security_text",
+            )))
+            .into_any_element()
     }
 
     fn render_setting_row(
@@ -1420,6 +1611,19 @@ impl Shell {
             )
             .child(global)
             .child(vault)
+    }
+}
+
+/// Wrap a path in single quotes unless every character is shell-safe.
+fn shell_quote(path: &str) -> String {
+    if !path.is_empty()
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '~'))
+    {
+        path.to_owned()
+    } else {
+        format!("'{}'", path.replace('\'', "'\\''"))
     }
 }
 

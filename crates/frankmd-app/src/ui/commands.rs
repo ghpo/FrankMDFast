@@ -44,6 +44,10 @@ impl Shell {
                 self.settings.category = super::settings::Category::Diagnostics;
                 self.open_overlay(OverlayKind::Settings, window, cx);
             }
+            "app.settings_remote" => {
+                self.settings.category = super::settings::Category::Remote;
+                self.open_overlay(OverlayKind::Settings, window, cx);
+            }
             "help.toggle" => {
                 self.help_tab = HelpTab::Markdown;
                 self.toggle_overlay(OverlayKind::Help, window, cx);

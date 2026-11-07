@@ -284,6 +284,12 @@ pub const BUILTIN: &[CommandSpec] = &[
     )
     .aka(&["keymap"]),
     cmd("app.diagnostics", "App", "Diagnostics", &["ctrl-shift-o"]).aka(&["logs"]),
+    cmd("app.settings_remote", "App", "Remote access settings", &[]).aka(&[
+        "remote",
+        "serve",
+        "tailscale",
+        "web",
+    ]),
     cmd("focus.sidebar", "Focus", "Sidebar", &["ctrl-1"]),
     cmd("focus.editor", "Focus", "Editor", &["ctrl-2"]),
     cmd("focus.preview", "Focus", "Preview", &["ctrl-3"]),
