@@ -45,6 +45,11 @@ The panel also has **Start on app launch**, **Listen on** (Tailscale or
 Loopback) and **Port** controls. Enabling it starts the server immediately when
 a token is configured (otherwise the panel explains what is missing) and
 remembers the choice for the next launch. Bind/port changes restart the server.
+The server runs as a **detached `frankmdfast --serve-only` process** (one per
+vault). Settings and startup spawn it, and its PID/URL are kept in `remote.json`
+inside the per-vault state directory. Closing the desktop window with `SUPER+W`
+does **not** stop it; Settings › Remote stops it explicitly.
+
 These are per-machine app preferences (the app state `prefs.json`), not `.fed`
 keys.
 
@@ -225,6 +230,8 @@ Errors are `{"error": "...", "code": "..."}` with stable codes
 ## Limitations
 
 - Single user. The token is shared by every device you give it to.
+- The daemon keeps running until you stop it in Settings, log out, or reboot.
+  (Use the systemd unit below if you want it to start without opening the app.)
 - No TLS of its own; Tailscale provides the encryption. Do not expose the port
   through a reverse proxy on the public internet.
 - The desktop app and the remote server share `.fed` and the same lock files,

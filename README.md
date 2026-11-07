@@ -42,6 +42,9 @@ without leaving the desktop app:
   **Generate token**, then **Save token** and **Copy token**. The panel shows
   the exact destination: `.fed` (This vault) or the global config (All vaults);
   `FRANKMD_AUTH_TOKEN` overrides the file.
+- **It keeps serving after you close the window** — the server runs as a
+  detached `frankmdfast --serve-only` daemon; `SUPER+W` does not stop it.
+  Settings › Remote starts/stops the daemon.
 - The browser editor has the file tree, autosave, live Markdown preview,
   search, settings, themes, media library/upload and AI actions.
 - Authentication is a mandatory token of at least 32 bytes (`auth_token` in

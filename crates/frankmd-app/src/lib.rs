@@ -85,35 +85,49 @@ pub fn run() -> anyhow::Result<()> {
         home.as_deref(),
     );
 
-    // Remote access is opt-in (CLI or Settings › Remote); prepare it before the
-    // single-instance check so `--serve-only` can run headless even when a
-    // desktop instance exists.
+    // Remote access is opt-in (CLI or Settings › Remote). The GUI never runs
+    // the server in-process: it spawns a detached `--serve-only` daemon so the
+    // server survives closing the window.
     let remote_requested = cli.serve || cli.serve_only || prefs.remote_start;
-    let remote = if remote_requested {
-        match remote::prepare(&cli, &launch, &env, &dirs, &prefs) {
-            Ok(plan) => Some(plan),
-            Err(err) => {
-                if cli.serve_only {
-                    return Err(err);
-                }
-                tracing::error!(%err, "remote server not started");
-                eprintln!("FrankMDFast: remote server not started: {err:#}");
-                remote::record_error(&format!("{err:#}"));
-                None
-            }
-        }
-    } else {
-        None
-    };
+    let real = launch
+        .vault_root
+        .canonicalize()
+        .unwrap_or_else(|_| launch.vault_root.clone());
+    let remote_state_dir = dirs.vault_state(&real);
 
     if cli.serve_only {
-        let plan = remote.ok_or_else(|| anyhow::anyhow!("remote server not prepared"))?;
+        let request = remote::build_request(&cli, &launch, &env, &dirs, &prefs)?;
+        let plan = remote::prepare_request(&request)?;
+        remote::write_running_status(
+            &request.state_dir,
+            std::process::id(),
+            &plan.url,
+            request.port,
+            &request.bind_spec,
+        );
         let runtime = frankmd_net::NetRuntime::new()?;
         tracing::info!(url = %plan.url, "serving without a window");
-        runtime
+        let result = runtime
             .handle()
-            .block_on(frankmd_remote::serve(plan.state, plan.addr))?;
+            .block_on(frankmd_remote::serve(plan.state, plan.addr));
+        if let Err(err) = &result {
+            remote::record_error(&request.state_dir, &err.to_string());
+        }
+        result?;
         return Ok(());
+    }
+
+    if remote_requested {
+        match remote::spawn_daemon(&cli, &launch, &env, &dirs, &prefs) {
+            Ok(status) => {
+                tracing::info!(url = %status.url, pid = status.pid, "remote server running");
+            }
+            Err(err) => {
+                tracing::error!(%err, "remote server not started");
+                eprintln!("FrankMDFast: remote server not started: {err:#}");
+                remote::record_error(&remote_state_dir, &format!("{err:#}"));
+            }
+        }
     }
 
     // Single instance (OM-021): hand the request to a running FrankMD.
@@ -156,9 +170,6 @@ pub fn run() -> anyhow::Result<()> {
             Ok(rt) => {
                 let rt = Arc::new(rt);
                 cx.set_global(bridge::tokio::NetRuntimeGlobal(Arc::clone(&rt)));
-                if let Some(plan) = remote.clone() {
-                    remote::start_background(&rt, plan);
-                }
             }
             Err(err) => tracing::error!(%err, "network runtime unavailable"),
         }

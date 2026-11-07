@@ -2674,6 +2674,7 @@ dependencies = [
  "ratex-layout",
  "ratex-parser",
  "ratex-svg",
+ "serde",
  "serde_json",
  "tempfile",
  "tracing",

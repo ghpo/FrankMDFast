@@ -935,7 +935,7 @@ impl Shell {
             .map(|c| c.vault.root().display().to_string())
             .unwrap_or_default();
         let quoted = shell_quote(&vault);
-        let status = crate::remote::status();
+        let status = crate::remote::status(&self.state_dir);
         let tailscale = crate::remote::tailscale_ipv4_cached();
         let port = status
             .as_ref()
@@ -1294,12 +1294,12 @@ impl Shell {
                     self.show_message(&text, false, cx);
                 }
                 Err(err) => {
-                    crate::remote::record_error(&err);
+                    crate::remote::record_error(&self.state_dir, &err);
                     self.show_message(&err, true, cx);
                 }
             }
         } else {
-            crate::remote::stop_background();
+            crate::remote::stop_daemon(&self.state_dir);
             let text = i18n::t(cx, "settings_sheet.remote.stopped");
             self.show_message(&text, false, cx);
         }
@@ -1414,17 +1414,17 @@ impl Shell {
 
     /// Restart a server that is already running (or configured to run).
     fn refresh_remote(&mut self, cx: &mut Context<Self>) {
-        if !crate::remote::is_running() && !self.app_prefs.get().remote_start {
+        if !crate::remote::is_running(&self.state_dir) && !self.app_prefs.get().remote_start {
             return;
         }
-        crate::remote::stop_background();
+        crate::remote::stop_daemon(&self.state_dir);
         match self.start_remote(cx) {
             Ok(()) => {
                 let text = i18n::t(cx, "settings_sheet.remote.started");
                 self.show_message(&text, false, cx);
             }
             Err(err) => {
-                crate::remote::record_error(&err);
+                crate::remote::record_error(&self.state_dir, &err);
                 self.show_message(&err, true, cx);
             }
         }
@@ -1455,15 +1455,9 @@ impl Shell {
             token,
             locale: self.locale_override.map(|locale| locale.code().to_owned()),
         };
-        let runtime = cx
-            .try_global::<crate::bridge::tokio::NetRuntimeGlobal>()
-            .ok_or_else(|| i18n::t(cx, "settings_sheet.remote.runtime_unavailable"))?
-            .0
-            .clone();
-        let plan = crate::remote::prepare_request(&request)
-            .map_err(|err| SharedString::from(format!("{err:#}")))?;
-        crate::remote::start_background(&runtime, plan);
-        Ok(())
+        crate::remote::spawn_daemon_request(&request)
+            .map(|_| ())
+            .map_err(|err| SharedString::from(format!("{err:#}")))
     }
 
     fn render_setting_row(
