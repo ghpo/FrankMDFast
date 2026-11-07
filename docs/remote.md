@@ -49,7 +49,7 @@ These are per-machine app preferences (the app state `prefs.json`), not `.fed`
 keys. The launch controls sit above the status line (the screenshot was taken
 before they were added):
 
-![Settings › Remote](remote-settings.png)
+![Settings › Remote](remote-settings-panel.png)
 
 ## Quick start
 
