@@ -18,33 +18,49 @@
 |---|---|---|
 | ![Command palette](docs/screenshots/palette.png) | ![Settings](docs/screenshots/settings.png) | ![Catppuccin Latte theme](docs/screenshots/light.png) |
 
+## Remote access (Tailscale) — start it from Settings
+
+<p align="center">
+  <img src="docs/remote-settings.png" width="860" alt="Settings › Remote access: status, Tailscale address, token, copy-ready commands and security note">
+</p>
+
+Serve this vault to a browser on another device on your Tailscale network,
+without leaving the desktop app:
+
+- **Settings › Remote → Start on app launch** — a per-machine preference that
+  starts the server immediately and on every next launch (Tailscale or
+  Loopback, editable port).
+- The browser editor has the file tree, autosave, live Markdown preview,
+  search, settings, themes, media library/upload and AI actions.
+- Authentication is a mandatory token of at least 32 bytes (`auth_token` in
+  `.fed`, `FRANKMD_AUTH_TOKEN`, or `--serve-token`).
+- Live updates over SSE. The same server can run headless (`--serve-only`) for
+  a systemd user unit.
+
+```bash
+export FRANKMD_AUTH_TOKEN="$(openssl rand -hex 32)"
+frankmdfast --serve ~/notes        # desktop window + remote server
+# or headless: frankmdfast --serve-only ~/notes
+# then open http://<tailscale-ip>:8787 and paste the token
+```
+
+The default bind is the Tailscale address; `0.0.0.0`/LAN requires
+`--serve-bind-any`. See [docs/remote.md](docs/remote.md) for the security
+model, HTTP API and the systemd unit.
+
+---
+
+
 ## Install
 
-FrankMDFast is the desktop version of [FrankMD](https://github.com/akitaonrails/FrankMD). Keep using
-FrankMD if you want to reach your notes from a browser or another machine; use FrankMDFast if you only
-need a desktop app. Both work on the same notes folder and `.fed` file. The command is `frankmdfast`.
+FrankMDFast is the desktop version of [FrankMD](https://github.com/akitaonrails/FrankMD). It edits the
+same notes folder and `.fed` file and now also serves the vault to a browser on your Tailscale
+network (see [Remote access](#remote-access-tailscale--start-it-from-settings) above). The command is
+`frankmdfast`.
 
 Download the package for your system from [Releases](https://github.com/akitaonrails/FrankMDFast/releases):
 the AppImage or tarball on Linux, the DMG on macOS, the installer or zip on Windows.
 On Arch Linux: `yay -S frankmdfast-bin`.
-
-## Remote access (Tailscale)
-
-FrankMDFast can serve the same vault to a browser on another machine on your
-Tailscale network:
-
-```bash
-FRANKMD_AUTH_TOKEN="$(openssl rand -hex 32)" frankmdfast --serve-only ~/notes
-# open http://<tailscale-ip>:8787 and paste the token
-```
-
-`--serve` keeps the desktop window and starts the server too. You can also
-enable **Settings › Remote → Start on app launch** (immediate + next launch,
-with Tailscale/Loopback and port controls). The default bind is the Tailscale
-address; `0.0.0.0` requires `--serve-bind-any`. A token of at least 32 bytes is
-mandatory. See [docs/remote.md](docs/remote.md) for the
-security model, API and a systemd unit. The same instructions are in
-**Settings › Remote** inside the app.
 
 ## This fork
 
