@@ -335,6 +335,11 @@ impl Shell {
 
     /// Ctrl+Shift+G.
     pub(crate) fn start_grammar_check(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.locked_note.is_some() {
+            let message = i18n::t(cx, "media_dialogs.grammar_unlock_note");
+            self.show_message(&message, true, cx);
+            return;
+        }
         let Some(grammar) = self.media.grammar.clone() else {
             return;
         };

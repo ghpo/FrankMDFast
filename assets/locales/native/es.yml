@@ -412,6 +412,7 @@ es:
     retry: "Reintentar"
     grammar_checking: "Revisando la gramática con %{provider} · %{model}"
     grammar_needs_provider: "La revisión gramatical necesita un proveedor de IA"
+    grammar_unlock_note: "Desbloquea el cifrado para revisar la gramática."
     change_counter: "Cambio %{current} de %{total}"
   media_library:
     not_used: "Sin usar"

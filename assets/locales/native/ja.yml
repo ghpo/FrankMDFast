@@ -412,6 +412,7 @@ ja:
     retry: "再試行"
     grammar_checking: "%{provider} · %{model} で文法をチェック中"
     grammar_needs_provider: "文法チェックには AI プロバイダーが必要です"
+    grammar_unlock_note: "文法を確認するには暗号化を解除してください。"
     change_counter: "変更 %{current} / %{total}"
   media_library:
     not_used: "未使用"

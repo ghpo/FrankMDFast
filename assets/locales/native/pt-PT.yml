@@ -412,6 +412,7 @@ pt-PT:
     retry: "Tentar novamente"
     grammar_checking: "A verificar a gramática com %{provider} · %{model}"
     grammar_needs_provider: "A verificação gramatical precisa de um fornecedor de IA"
+    grammar_unlock_note: "Desbloqueie a cifra para verificar a gramática."
     change_counter: "Alteração %{current} de %{total}"
   media_library:
     not_used: "Não utilizado"

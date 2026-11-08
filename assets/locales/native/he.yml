@@ -412,6 +412,7 @@ he:
     retry: "נסה שוב"
     grammar_checking: "בודק דקדוק עם %{provider} · %{model}"
     grammar_needs_provider: "בדיקת דקדוק דורשת ספק AI"
+    grammar_unlock_note: "פתח את ההצפנה כדי לבדוק את הדקדוק."
     change_counter: "שינוי %{current} מתוך %{total}"
   media_library:
     not_used: "לא בשימוש"

@@ -412,6 +412,7 @@ en:
     retry: "Retry"
     grammar_checking: "Checking grammar with %{provider} · %{model}"
     grammar_needs_provider: "Grammar check needs an AI provider"
+    grammar_unlock_note: "Unlock encryption to check the grammar."
     change_counter: "Change %{current} of %{total}"
   media_library:
     not_used: "Not used"

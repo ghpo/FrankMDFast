@@ -412,6 +412,7 @@ ko:
     retry: "다시 시도"
     grammar_checking: "%{provider} · %{model}(으)로 문법 검사 중"
     grammar_needs_provider: "문법 검사에는 AI 공급자가 필요합니다"
+    grammar_unlock_note: "문법을 검사하려면 암호화를 해제하세요."
     change_counter: "변경 %{current} / %{total}"
   media_library:
     not_used: "사용 안 함"
