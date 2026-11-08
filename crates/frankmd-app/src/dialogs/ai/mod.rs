@@ -188,7 +188,11 @@ impl GrammarDialog {
                         } else {
                             this.open = true;
                         }
-                    } else if available && this.open && this.state.result().is_none() {
+                    } else if available
+                        && this.open
+                        && this.state.result().is_none()
+                        && this.state.error().is_none()
+                    {
                         // The setup screen was opened while the config was
                         // stale. Close it as soon as a provider is available;
                         // the user can invoke the check again.
@@ -231,6 +235,7 @@ impl GrammarDialog {
             // show the setup screen with a stale provider/model.
             self.state = GrammarState::from_config(&self.services.ai().provider_info());
         }
+        self.pending_start = false;
         match self.state.start(path.as_deref(), &self.text) {
             Ok(effects) => self.run(effects, window, cx),
             Err(StartError::NotConfigured) => {
