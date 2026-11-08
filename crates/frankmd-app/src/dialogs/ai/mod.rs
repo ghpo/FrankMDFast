@@ -91,6 +91,8 @@ pub enum GrammarEvent {
     },
     /// Open Settings › Integrations.
     OpenSettings,
+    /// Config became available while a start was pending: run it again.
+    Retry,
 }
 
 /// The note the check reads: the editor text of `path` (identical to the
@@ -120,6 +122,7 @@ pub struct GrammarDialog {
     edit: Entity<TextareaState>,
     request: Option<(Option<Abort>, Task<()>)>,
     config: Option<Task<()>>,
+    pending_start: bool,
     syncing: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -153,6 +156,7 @@ impl GrammarDialog {
             edit,
             request: None,
             config: None,
+            pending_start: false,
             syncing: false,
             _subscriptions: subs,
         };
@@ -171,10 +175,20 @@ impl GrammarDialog {
             this.update(cx, |this, cx| {
                 if !this.state.in_flight() {
                     this.state = GrammarState::from_config(&info);
-                    if !matches!(this.state.availability(), Availability::NotConfigured)
-                        && this.open
-                        && this.state.result().is_none()
-                    {
+                    let available =
+                        !matches!(this.state.availability(), Availability::NotConfigured);
+                    if this.pending_start {
+                        this.pending_start = false;
+                        if available {
+                            // Start was requested while the dialog still held
+                            // an old config. Re-run it with the fresh state.
+                            this.open = false;
+                            cx.emit(GrammarEvent::Closed);
+                            cx.emit(GrammarEvent::Retry);
+                        } else {
+                            this.open = true;
+                        }
+                    } else if available && this.open && this.state.result().is_none() {
                         // The setup screen was opened while the config was
                         // stale. Close it as soon as a provider is available;
                         // the user can invoke the check again.
@@ -220,9 +234,14 @@ impl GrammarDialog {
         match self.state.start(path.as_deref(), &self.text) {
             Ok(effects) => self.run(effects, window, cx),
             Err(StartError::NotConfigured) => {
+                // Show the setup immediately, but re-read once: if a provider
+                // became available in the background, the reload closes the
+                // setup and retries the check automatically.
                 self.open = true;
                 self.focus.focus(window, cx);
                 cx.emit(GrammarEvent::Show);
+                self.pending_start = true;
+                self.reload_config(cx);
             }
             Err(error) => {
                 if let Some(key) = error.key() {

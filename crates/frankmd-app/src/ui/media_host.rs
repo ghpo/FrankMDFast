@@ -382,6 +382,7 @@ impl Shell {
             }
             GrammarEvent::Status { text, error } => self.show_message(text, *error, cx),
             GrammarEvent::OpenSettings => self.open_settings_at_integrations(window, cx),
+            GrammarEvent::Retry => self.start_grammar_check(window, cx),
         }
         cx.notify();
     }
