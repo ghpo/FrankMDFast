@@ -397,7 +397,9 @@
     if (!button) return;
     button.disabled = !state.openPath;
     button.title = state.encrypted ? "Descriptografar nota" : "Criptografar nota";
-    button.textContent = state.encrypted ? "🔓" : "🔒";
+    button.textContent = state.encrypted
+      ? "🔓 Descriptografar nota"
+      : "🔒 Criptografar nota";
   }
 
   async function toggleNoteEncryption() {
@@ -916,6 +918,15 @@
 
   // ---------------------------------------------------------------- bindings
 
+  async function logout() {
+    await fetch("/logout", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-FrankMD-CSRF": "1" },
+    });
+    location.href = "/login";
+  }
+
   function bind() {
     $("#editor").addEventListener("input", markDirty);
     $("#editor").addEventListener("keydown", (ev) => {
@@ -937,6 +948,12 @@
       setMobileView(state.mobileView === "preview" ? "editor" : "preview");
     });
     $("#btn-note-crypto").addEventListener("click", toggleNoteEncryption);
+    $("#btn-mobile-new").addEventListener("click", () => {
+      closeSidebar();
+      newNote("");
+    });
+    $("#btn-mobile-lock").addEventListener("click", lockEncryption);
+    $("#btn-mobile-logout").addEventListener("click", logout);
     $("#btn-finder").addEventListener("click", openFinder);
     $("#btn-search").addEventListener("click", openSearch);
     $("#btn-new-note").addEventListener("click", () => newNote(""));
@@ -946,14 +963,7 @@
     $("#btn-settings").addEventListener("click", openSettings);
     $("#btn-library").addEventListener("click", openLibrary);
     $("#btn-lock-crypto").addEventListener("click", lockEncryption);
-    $("#btn-logout").addEventListener("click", async () => {
-      await fetch("/logout", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "X-FrankMD-CSRF": "1" },
-      });
-      location.href = "/login";
-    });
+    $("#btn-logout").addEventListener("click", logout);
     $("#overlay-close").addEventListener("click", closeOverlay);
     $("#overlay").addEventListener("click", (ev) => {
       if (ev.target === $("#overlay")) closeOverlay();
