@@ -11,6 +11,7 @@
 //!   vault or `https` (egress client); links open externally only for
 //!   `http(s)`/`mailto` (see [`links`]).
 
+mod export;
 pub mod inline;
 pub mod items;
 pub mod links;

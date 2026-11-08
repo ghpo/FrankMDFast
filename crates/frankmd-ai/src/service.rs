@@ -74,6 +74,35 @@ impl AiService {
         self.config.effective_ai_model()
     }
 
+    /// Send a tiny real request to the selected provider/model and return
+    /// success only when the provider answers with text. Used by Settings ›
+    /// Integrations after saving an API key/model.
+    pub async fn validate(&self) -> Result<(), AiError> {
+        if !self.enabled() {
+            return Err(AiError::NotConfigured);
+        }
+        let (Some(provider), Some(model)) = (self.current_provider(), self.current_model()) else {
+            return Err(AiError::NoProvider);
+        };
+        tracing::info!(provider = provider.as_str(), model = %model, "AI validation request");
+        let Some(target) = self.chat_target(provider, &model) else {
+            return Err(AiError::NoProvider);
+        };
+        complete(
+            &self.http,
+            target,
+            &model,
+            "Reply with the single word OK.",
+            "ping",
+        )
+        .await
+        .map(|_| ())
+        .map_err(|err| {
+            tracing::error!(provider = provider.as_str(), model = %model, error = %err, "AI validation failed");
+            AiError::ProviderFailed
+        })
+    }
+
     /// `provider_info`.
     pub fn provider_info(&self) -> ProviderInfo {
         ProviderInfo {
@@ -133,6 +162,11 @@ impl AiService {
                 url: openrouter_url(&self.endpoints),
                 bearer: Some(key()?),
                 openrouter: true,
+            }),
+            AiProviderId::Deepseek => Some(ChatTarget::OpenAiCompatible {
+                url: format!("{}/chat/completions", trim(&self.endpoints.deepseek)),
+                bearer: Some(key()?),
+                openrouter: false,
             }),
             AiProviderId::Ollama => Some(ChatTarget::OpenAiCompatible {
                 url: ollama_url(credential.as_deref()?)?,

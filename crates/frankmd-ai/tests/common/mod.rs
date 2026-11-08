@@ -28,6 +28,7 @@ pub fn endpoints(base: &str) -> Endpoints {
         anthropic: base.into(),
         gemini: base.into(),
         openrouter: base.into(),
+        deepseek: base.into(),
     }
 }
 

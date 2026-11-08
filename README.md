@@ -48,6 +48,23 @@ rotation and limits.
   <img src="docs/screenshots/encryption-unlock.png" width="32%" alt="Quick unlock dialog for encrypted content">
 </p>
 
+## Preview: copy, PDF and print
+
+The preview header has **Copy formatted** (rich HTML plus plain-text fallback),
+**Save PDF…** and **Print**. PDF and print render the same sanitized preview
+HTML through headless Chromium; **Print** opens the generated PDF in the
+default viewer, where you can choose a printer. These actions are disabled
+while an encrypted note is locked.
+
+## AI integration (including DeepSeek)
+
+Open **Settings › Integrations** and choose **DeepSeek** as the provider; fill
+**DeepSeek API key** and select **DeepSeek Chat** or **DeepSeek Reasoner**.
+The **Save and test** button persists the pending key/model and sends a minimal
+real request, showing whether the connection worked. DeepSeek models can also
+be used through OpenRouter with the two preset buttons (your OpenRouter key is
+used in that path).
+
 ## Remote access (Tailscale) — start it from Settings
 
 <p align="center">

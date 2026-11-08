@@ -21,6 +21,7 @@ mod overlay_view;
 mod overlays;
 mod palette;
 mod prelude;
+mod preview_export;
 mod preview_region;
 mod recovery;
 mod render;

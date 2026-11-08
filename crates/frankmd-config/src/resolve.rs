@@ -44,6 +44,7 @@ pub struct Resolved {
 #[allow(missing_docs)]
 pub enum AiProviderId {
     Openai,
+    Deepseek,
     Anthropic,
     Openrouter,
     Ollama,
@@ -52,8 +53,9 @@ pub enum AiProviderId {
 
 impl AiProviderId {
     /// **[COMPAT]** `AI_PROVIDER_PRIORITY` (auto selection order).
-    pub const PRIORITY: [AiProviderId; 5] = [
+    pub const PRIORITY: [AiProviderId; 6] = [
         AiProviderId::Openai,
+        AiProviderId::Deepseek,
         AiProviderId::Anthropic,
         AiProviderId::Openrouter,
         AiProviderId::Ollama,
@@ -61,9 +63,10 @@ impl AiProviderId {
     ];
 
     /// **[COMPAT]** order of `ai_providers_available` (`available_providers`).
-    pub const AVAILABILITY_ORDER: [AiProviderId; 5] = [
+    pub const AVAILABILITY_ORDER: [AiProviderId; 6] = [
         AiProviderId::Ollama,
         AiProviderId::Openrouter,
+        AiProviderId::Deepseek,
         AiProviderId::Anthropic,
         AiProviderId::Gemini,
         AiProviderId::Openai,
@@ -73,6 +76,7 @@ impl AiProviderId {
     pub fn as_str(self) -> &'static str {
         match self {
             AiProviderId::Openai => "openai",
+            AiProviderId::Deepseek => "deepseek",
             AiProviderId::Anthropic => "anthropic",
             AiProviderId::Openrouter => "openrouter",
             AiProviderId::Ollama => "ollama",
@@ -89,6 +93,7 @@ impl AiProviderId {
     pub fn credential_key(self) -> Key {
         match self {
             AiProviderId::Openai => Key::OpenaiApiKey,
+            AiProviderId::Deepseek => Key::DeepseekApiKey,
             AiProviderId::Anthropic => Key::AnthropicApiKey,
             AiProviderId::Openrouter => Key::OpenrouterApiKey,
             AiProviderId::Ollama => Key::OllamaApiBase,
@@ -100,6 +105,7 @@ impl AiProviderId {
     pub fn model_key(self) -> Key {
         match self {
             AiProviderId::Openai => Key::OpenaiModel,
+            AiProviderId::Deepseek => Key::DeepseekModel,
             AiProviderId::Anthropic => Key::AnthropicModel,
             AiProviderId::Openrouter => Key::OpenrouterModel,
             AiProviderId::Ollama => Key::OllamaModel,
@@ -349,7 +355,7 @@ impl ResolvedConfig {
     }
 
     /// **[COMPAT]** `ai_providers_available` (order: ollama, openrouter,
-    /// anthropic, gemini, openai).
+    /// deepseek, anthropic, gemini, openai).
     pub fn ai_providers_available(&self) -> Vec<AiProviderId> {
         AiProviderId::AVAILABILITY_ORDER
             .into_iter()
@@ -357,8 +363,8 @@ impl ResolvedConfig {
             .collect()
     }
 
-    /// **[COMPAT]** `effective_ai_provider` (priority openai > anthropic >
-    /// openrouter > ollama > gemini).
+    /// **[COMPAT]** `effective_ai_provider` (priority openai > deepseek >
+    /// anthropic > openrouter > ollama > gemini).
     pub fn effective_ai_provider(&self) -> Option<AiProviderId> {
         let available = self.ai_providers_available();
         if available.is_empty() {

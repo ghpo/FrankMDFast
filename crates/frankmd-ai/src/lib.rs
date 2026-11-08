@@ -196,6 +196,8 @@ pub struct Endpoints {
     pub gemini: String,
     /// `https://openrouter.ai`.
     pub openrouter: String,
+    /// `https://api.deepseek.com`.
+    pub deepseek: String,
 }
 
 impl Default for Endpoints {
@@ -205,6 +207,7 @@ impl Default for Endpoints {
             anthropic: "https://api.anthropic.com".into(),
             gemini: "https://generativelanguage.googleapis.com".into(),
             openrouter: "https://openrouter.ai".into(),
+            deepseek: "https://api.deepseek.com".into(),
         }
     }
 }

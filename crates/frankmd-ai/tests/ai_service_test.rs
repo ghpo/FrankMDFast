@@ -712,3 +712,43 @@ async fn image_gen_missing_reference_falls_back() {
         .expect("image");
     assert_eq!(img.data, b64(b"fallback_data"));
 }
+
+#[tokio::test]
+async fn deepseek_validate_uses_chat_completions_and_reports_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .and(header("authorization", "Bearer sk-ds-test"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion("OK")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let s = mocked(
+        &server.uri(),
+        Some(
+            "ai_provider = deepseek\ndeepseek_api_key = sk-ds-test\ndeepseek_model = deepseek-chat\n",
+        ),
+        &[],
+    );
+    assert_eq!(s.current_provider(), Some(AiProviderId::Deepseek));
+    assert_eq!(s.current_model().as_deref(), Some("deepseek-chat"));
+    s.validate().await.expect("DeepSeek validation");
+}
+
+#[tokio::test]
+async fn deepseek_validate_failure_is_generic() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(401).set_body_string("bad key"))
+        .mount(&server)
+        .await;
+    let s = mocked(
+        &server.uri(),
+        Some("ai_provider = deepseek\ndeepseek_api_key = sk-bad\ndeepseek_model = deepseek-chat\n"),
+        &[],
+    );
+    let err = s.validate().await.expect_err("401");
+    assert_eq!(err.to_string(), "AI provider request failed");
+    assert!(!err.to_string().contains("bad key"));
+}

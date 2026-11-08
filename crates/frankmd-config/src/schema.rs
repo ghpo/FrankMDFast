@@ -94,14 +94,16 @@ pub enum Key {
     GeminiModel,
     OpenaiApiKey,
     OpenaiModel,
+    DeepseekApiKey,
+    DeepseekModel,
     HugoPathStyle,
     AuthToken,
     ImageGenerationModel,
 }
 
 impl Key {
-    /// Every key in schema order (45).
-    pub const ALL: [Key; 45] = [
+    /// Every key in schema order (47).
+    pub const ALL: [Key; 47] = [
         Key::Theme,
         Key::RecentFiles,
         Key::CustomTheme,
@@ -144,6 +146,8 @@ impl Key {
         Key::GeminiModel,
         Key::OpenaiApiKey,
         Key::OpenaiModel,
+        Key::DeepseekApiKey,
+        Key::DeepseekModel,
         Key::HugoPathStyle,
         Key::AuthToken,
         Key::ImageGenerationModel,
@@ -167,18 +171,19 @@ impl Key {
         Key::ALL.into_iter().find(|k| k.name() == name)
     }
 
-    /// The five `AI_CREDENTIAL_KEYS` that switch on file-only AI mode.
-    pub const AI_CREDENTIALS: [Key; 5] = [
+    /// The six `AI_CREDENTIAL_KEYS` that switch on file-only AI mode.
+    pub const AI_CREDENTIALS: [Key; 6] = [
         Key::OllamaApiBase,
         Key::OpenrouterApiKey,
         Key::AnthropicApiKey,
         Key::GeminiApiKey,
         Key::OpenaiApiKey,
+        Key::DeepseekApiKey,
     ];
 
-    /// The 12 AI keys whose presence (even commented, `/^#?\s*key\s*=/i`)
+    /// The 14 AI keys whose presence (even commented, `/^#?\s*key\s*=/i`)
     /// suppresses the AI-section upgrade (backend.md §1.6).
-    pub const AI_UPGRADE_MARKERS: [Key; 12] = [
+    pub const AI_UPGRADE_MARKERS: [Key; 14] = [
         Key::AiProvider,
         Key::AiModel,
         Key::OllamaApiBase,
@@ -191,6 +196,8 @@ impl Key {
         Key::GeminiModel,
         Key::OpenaiApiKey,
         Key::OpenaiModel,
+        Key::DeepseekApiKey,
+        Key::DeepseekModel,
     ];
 
     /// `UI_KEYS` in original order (17 keys).
@@ -243,7 +250,7 @@ use KeyType::{Boolean as B, CustomTheme as C, Integer as I, Json as J, String as
 
 /// **[COMPAT]** `Config::SCHEMA` (config.rb:11-79), one row per [`Key::ALL`] entry, same order.
 /// Columns: name, type, default, ENV, UI, sensitive.
-static SCHEMA: [KeySpec; 45] = [
+static SCHEMA: [KeySpec; 47] = [
     row("theme", S, None, None, true, false),
     row("recent_files", J, Some("[]"), None, false, false),
     row("custom_theme", C, None, None, true, false),
@@ -444,6 +451,22 @@ static SCHEMA: [KeySpec; 45] = [
         S,
         Some("gpt-4o-mini"),
         Some("OPENAI_MODEL"),
+        false,
+        false,
+    ),
+    row(
+        "deepseek_api_key",
+        S,
+        None,
+        Some("DEEPSEEK_API_KEY"),
+        false,
+        true,
+    ),
+    row(
+        "deepseek_model",
+        S,
+        Some("deepseek-chat"),
+        Some("DEEPSEEK_MODEL"),
         false,
         false,
     ),

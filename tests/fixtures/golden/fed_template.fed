@@ -74,7 +74,7 @@
 # and {{date}} are substituted. Leave unset to use the built-in template.
 
 # AI/LLM (for grammar checking)
-# Provider priority when ai_provider = auto: openai > anthropic > openrouter > ollama > gemini
+# Provider priority when ai_provider = auto: openai > deepseek > anthropic > openrouter > ollama > gemini
 # Gemini is lowest priority for text (its key is mainly for image generation)
 
 # ai_provider = auto
@@ -83,6 +83,10 @@
 # OpenAI (recommended)
 # openai_api_key = sk-...
 # openai_model = gpt-4o-mini
+
+# DeepSeek (OpenAI-compatible)
+# deepseek_api_key = sk-...
+# deepseek_model = deepseek-chat
 
 # Anthropic (Claude models)
 # anthropic_api_key = sk-ant-...

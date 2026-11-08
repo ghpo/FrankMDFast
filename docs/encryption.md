@@ -53,9 +53,10 @@ decrypt standalone media manually.
 
 While the vault is unlocked, encrypted images are decrypted into a private
 cache (`<per-vault state>/attachment-cache`, mode `0700`) only to render the
-preview and the image viewer. The cache is deleted when the vault is locked,
-when the window closes and on the next startup. While locked, an encrypted
-note shows the padlock panel and encrypted attachment images are not loaded.
+preview and the image viewer. The clipboard/PDF/print exporters use the same
+decrypted rendering path. The cache is deleted when the vault is locked, when
+the window closes and on the next startup. While locked, an encrypted note
+shows the padlock panel and encrypted attachment images are not loaded.
 
 ## Cryptography
 

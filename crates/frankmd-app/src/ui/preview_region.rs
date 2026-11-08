@@ -19,8 +19,12 @@ impl Shell {
         let zoom_in = this.clone();
         let sync = this.clone();
         let attachments = this.clone();
+        let copy = this.clone();
+        let save_pdf = this.clone();
+        let print = this.clone();
         let zoom = self.preview.read(cx).zoom();
         let attachment_count = self.preview.read(cx).attachments().len();
+        let can_export = self.locked_note.is_none() && self.active_path().is_some();
         let sync_on = self.scroll_sync;
         let preview_width = self.preview_ratio() * self.panes_width();
         v_flex()
@@ -49,6 +53,40 @@ impl Shell {
                             .child(i18n::t(cx, "preview.title")),
                     )
                     .child(div().flex_1())
+                    .when(can_export, |el| {
+                        el.child(
+                            Button::new("preview-copy")
+                                .ghost()
+                                .xsmall()
+                                .icon(crate::ui::icons::ph("copy"))
+                                .tooltip(i18n::t(cx, "preview.copy_formatted"))
+                                .on_click(move |_, _, cx| {
+                                    let _ = copy.update(cx, |shell, cx| shell.copy_preview(cx));
+                                }),
+                        )
+                        .child(
+                            Button::new("preview-save-pdf")
+                                .ghost()
+                                .xsmall()
+                                .icon(crate::ui::icons::ph("file-pdf"))
+                                .tooltip(i18n::t(cx, "preview.save_pdf"))
+                                .on_click(move |_, window, cx| {
+                                    let _ = save_pdf
+                                        .update(cx, |shell, cx| shell.save_preview_pdf(window, cx));
+                                }),
+                        )
+                        .child(
+                            Button::new("preview-print")
+                                .ghost()
+                                .xsmall()
+                                .icon(crate::ui::icons::ph("printer"))
+                                .tooltip(i18n::t(cx, "preview.print"))
+                                .on_click(move |_, window, cx| {
+                                    let _ = print
+                                        .update(cx, |shell, cx| shell.print_preview(window, cx));
+                                }),
+                        )
+                    })
                     .when(attachment_count > 0, |el| {
                         el.child(
                             Button::new("preview-attachments")

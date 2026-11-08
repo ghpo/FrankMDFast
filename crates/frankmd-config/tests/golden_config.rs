@@ -319,7 +319,7 @@ fn golden_fed_template_is_byte_identical() {
         fed::template().as_bytes(),
         frankmd_testkit::golden_bytes("fed_template.fed").as_slice()
     );
-    assert_eq!(fed::template().len(), 3032);
+    assert_eq!(fed::template().len(), 3136);
 }
 
 #[test]

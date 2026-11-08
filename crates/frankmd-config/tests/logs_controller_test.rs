@@ -57,7 +57,7 @@ fn config_masks_sensitive_values() {
     // Give every sensitive key a value so the mask is actually exercised.
     let v = TestVault::with_fed(
         "auth_token = t\naws_access_key_id = a\naws_secret_access_key = b\nyoutube_api_key = c\n\
-         google_api_key = d\nopenai_api_key = e\nopenrouter_api_key = f\nanthropic_api_key = g\ngemini_api_key = h\n",
+         google_api_key = d\nopenai_api_key = e\nopenrouter_api_key = f\nanthropic_api_key = g\ngemini_api_key = h\ndeepseek_api_key = i\n",
     );
     for e in v
         .open_empty_env()

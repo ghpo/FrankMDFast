@@ -11,6 +11,7 @@
 
 use std::path::PathBuf;
 
+use crate::dialogs::media::task::{Abort, spawn_net};
 use crate::scale::px;
 use frankmd_config::{Key, Provenance, Value};
 use frankmd_workspace::Command;
@@ -216,9 +217,18 @@ const HUGO_STYLE_CHOICES: &[(&str, &str)] = &[
     ("dated", "settings_sheet.hugo.dated"),
     ("flat", "settings_sheet.hugo.flat"),
 ];
+const DEEPSEEK_MODEL_CHOICES: &[(&str, &str)] = &[
+    ("deepseek-chat", "settings_sheet.integrations.deepseek_chat"),
+    (
+        "deepseek-reasoner",
+        "settings_sheet.integrations.deepseek_reasoner",
+    ),
+];
+
 const AI_PROVIDER_CHOICES: &[(&str, &str)] = &[
     ("auto", "settings_sheet.integrations.auto"),
     ("openai", "settings_sheet.integrations.openai"),
+    ("deepseek", "settings_sheet.integrations.deepseek"),
     ("anthropic", "settings_sheet.integrations.anthropic"),
     ("openrouter", "settings_sheet.integrations.openrouter"),
     ("ollama", "settings_sheet.integrations.ollama"),
@@ -412,6 +422,16 @@ const ROWS: &[RowSpec] = &[
     ),
     row(
         Category::Integrations,
+        "settings_sheet.integrations.deepseek_key",
+        Control::Secret(Key::DeepseekApiKey),
+    ),
+    row(
+        Category::Integrations,
+        "settings_sheet.integrations.deepseek_model",
+        Control::Choice(Key::DeepseekModel, DEEPSEEK_MODEL_CHOICES),
+    ),
+    row(
+        Category::Integrations,
         "settings_sheet.integrations.anthropic_key",
         Control::Secret(Key::AnthropicApiKey),
     ),
@@ -512,6 +532,14 @@ pub(crate) struct SettingsState {
     pub(crate) encryption_jobs: Vec<Task<()>>,
     /// Result of the "encrypt attachments of encrypted notes" migration.
     pub(crate) encryption_repair: Option<(SharedString, bool)>,
+    /// In-flight AI save/validation request.
+    pub(crate) ai_test_task: Option<Task<()>>,
+    /// Abort guard for the AI validation request.
+    pub(crate) ai_test_abort: Option<Abort>,
+    /// Whether the AI validation request is running.
+    pub(crate) ai_testing: bool,
+    /// Result of the last AI save/validation.
+    pub(crate) ai_test_status: Option<(SharedString, bool)>,
     /// Secret rows whose "Change…" input is open.
     pub(crate) editing_secrets: std::collections::HashSet<Key>,
     /// Inline error of the last failed write, by key.
@@ -541,6 +569,10 @@ impl SettingsState {
                 pending_seal_import: None,
                 encryption_jobs: Vec::new(),
                 encryption_repair: None,
+                ai_test_task: None,
+                ai_test_abort: None,
+                ai_testing: false,
+                ai_test_status: None,
                 editing_secrets: Default::default(),
                 errors: Default::default(),
                 subscriptions: Vec::new(),
@@ -868,6 +900,9 @@ impl Shell {
                 self.render_encryption_panel(&theme, window, cx)
                     .into_any_element(),
             );
+        }
+        if query.is_empty() && self.settings.category == Category::Integrations {
+            body.push(self.render_ai_panel(&theme, window, cx).into_any_element());
         }
         if body.is_empty() {
             body.push(
@@ -1638,6 +1673,223 @@ impl Shell {
             token,
             locale: self.locale_override.map(|locale| locale.code().to_owned()),
         })
+    }
+
+    /// Settings › Integrations: the DeepSeek helper panel (native provider,
+    /// OpenRouter presets and the save/validate action).
+    fn render_ai_panel(
+        &mut self,
+        theme: &gpui_kit::component::theme::Theme,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let title = |text: SharedString| div().text_sm().font_semibold().child(text);
+        let paragraph = |text: SharedString| {
+            div()
+                .w_full()
+                .min_w_0()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(text)
+        };
+        let mut panel = v_flex()
+            .id("settings-ai")
+            .test_support()
+            .w_full()
+            .min_w_0()
+            .gap_2()
+            .pt_2()
+            .border_t_1()
+            .border_color(theme.border)
+            .child(title(i18n::t(
+                cx,
+                "settings_sheet.integrations.ai_validation_title",
+            )))
+            .child(paragraph(i18n::t(
+                cx,
+                "settings_sheet.integrations.ai_validation_hint",
+            )));
+
+        let mut presets = h_flex().gap_2().flex_wrap();
+        for (id, model, label) in [
+            (
+                "ai-preset-deepseek-chat",
+                "deepseek/deepseek-chat",
+                "settings_sheet.integrations.ai_preset_chat",
+            ),
+            (
+                "ai-preset-deepseek-reasoner",
+                "deepseek/deepseek-reasoner",
+                "settings_sheet.integrations.ai_preset_reasoner",
+            ),
+        ] {
+            let this = cx.entity().downgrade();
+            presets = presets.child(
+                Button::new(id)
+                    .xsmall()
+                    .outline()
+                    .label(i18n::t(cx, label))
+                    .on_click(move |_, window, cx| {
+                        let model = model.to_owned();
+                        let _ =
+                            this.update(cx, |shell, cx| shell.apply_ai_preset(&model, window, cx));
+                    }),
+            );
+        }
+        panel = panel
+            .child(paragraph(i18n::t(
+                cx,
+                "settings_sheet.integrations.ai_preset_hint",
+            )))
+            .child(presets);
+
+        if self.settings.ai_testing {
+            panel = panel.child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(i18n::t(cx, "settings_sheet.integrations.ai_validating")),
+            );
+        } else if let Some((text, error)) = self.settings.ai_test_status.clone() {
+            panel = panel.child(
+                div()
+                    .text_xs()
+                    .text_color(if error { theme.danger } else { theme.success })
+                    .child(text),
+            );
+        }
+
+        let this = cx.entity().downgrade();
+        let save = Button::new("ai-save-test")
+            .primary()
+            .label(i18n::t(cx, "settings_sheet.integrations.ai_save_test"))
+            .disabled(self.settings.ai_testing)
+            .on_click(move |_, window, cx| {
+                let _ = this.update(cx, |shell, cx| shell.save_and_test_ai(window, cx));
+            });
+        panel.child(save).into_any_element()
+    }
+
+    /// Store the pending AI fields and validate the selected provider/model
+    /// with a small real request.
+    fn save_and_test_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let keys = [
+            Key::AiProvider,
+            Key::AiModel,
+            Key::OpenaiApiKey,
+            Key::OpenaiModel,
+            Key::DeepseekApiKey,
+            Key::DeepseekModel,
+            Key::AnthropicApiKey,
+            Key::AnthropicModel,
+            Key::OpenrouterApiKey,
+            Key::OpenrouterModel,
+            Key::GeminiApiKey,
+            Key::GeminiModel,
+            Key::OllamaApiBase,
+            Key::OllamaModel,
+        ];
+        let mut changes = Vec::new();
+        for key in keys {
+            let Some(input) = self.settings.inputs.get(&key) else {
+                continue;
+            };
+            let raw = input.read(cx).value().trim().to_owned();
+            let value = if raw.is_empty() {
+                None
+            } else {
+                match frankmd_config::value::cast(&raw, key.spec().ty) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        self.settings.ai_test_status =
+                            Some((i18n::t(cx, "settings_sheet.integrations.ai_invalid"), true));
+                        cx.notify();
+                        return;
+                    }
+                }
+            };
+            changes.push((key, value));
+        }
+        if !changes.is_empty() {
+            self.write_settings(changes, window, cx);
+            if self.settings.errors.keys().any(|key| {
+                key.spec().name.contains("_api_key") || key.spec().name.contains("_model")
+            }) {
+                self.settings.ai_test_status =
+                    Some((i18n::t(cx, "settings_sheet.integrations.ai_invalid"), true));
+                cx.notify();
+                return;
+            }
+        }
+
+        let Some(services) = self.media.hub.as_ref().map(|hub| hub.services.clone()) else {
+            self.settings.ai_test_status =
+                Some((i18n::t(cx, "settings_sheet.remote.vault_unavailable"), true));
+            cx.notify();
+            return;
+        };
+        let service = services.ai();
+        let Some(provider) = service.current_provider() else {
+            self.settings.ai_test_status = Some((
+                i18n::t(cx, "settings_sheet.integrations.ai_no_provider"),
+                true,
+            ));
+            cx.notify();
+            return;
+        };
+        let Some(model) = service.current_model() else {
+            self.settings.ai_test_status =
+                Some((i18n::t(cx, "settings_sheet.integrations.ai_no_model"), true));
+            cx.notify();
+            return;
+        };
+        let provider = provider.as_str().to_owned();
+        self.settings.ai_testing = true;
+        self.settings.ai_test_status = None;
+        let (abort, work) = spawn_net(cx, async move { service.validate().await });
+        let task = cx.spawn(async move |this, cx| {
+            let result = work.await;
+            this.update(cx, |shell, cx| {
+                shell.settings.ai_testing = false;
+                shell.settings.ai_test_status = Some(match result {
+                    Some(Ok(())) => (
+                        i18n::t_args(
+                            cx,
+                            "settings_sheet.integrations.ai_valid",
+                            &[("provider", &provider), ("model", &model)],
+                        ),
+                        false,
+                    ),
+                    Some(Err(err)) => (
+                        i18n::t_args(
+                            cx,
+                            "settings_sheet.integrations.ai_invalid_detail",
+                            &[("error", &err.to_string())],
+                        ),
+                        true,
+                    ),
+                    None => (i18n::t(cx, "settings_sheet.integrations.ai_invalid"), true),
+                });
+                cx.notify();
+            })
+            .ok();
+        });
+        self.settings.ai_test_task = Some(task);
+        self.settings.ai_test_abort = abort;
+        cx.notify();
+    }
+
+    fn apply_ai_preset(&mut self, model: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.write_settings(
+            vec![
+                (Key::AiProvider, Some(Value::Str("openrouter".to_owned()))),
+                (Key::OpenrouterModel, Some(Value::Str(model.to_owned()))),
+            ],
+            window,
+            cx,
+        );
+        self.settings.ai_test_status = None;
+        cx.notify();
     }
 
     /// Settings › Encryption: create/unlock/lock, change the password and back
