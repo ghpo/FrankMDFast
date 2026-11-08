@@ -174,10 +174,18 @@ impl GrammarDialog {
             let info = work.await;
             this.update(cx, |this, cx| {
                 if !this.state.in_flight() {
-                    this.state = GrammarState::from_config(&info);
+                    // Never replace a state that already owns a diff/error:
+                    // a late config reload used to wipe the result and make
+                    // the dialog flash away.
+                    if this.state.result().is_none() && this.state.error().is_none() {
+                        this.state.set_availability(&info);
+                    }
                     let available =
                         !matches!(this.state.availability(), Availability::NotConfigured);
-                    if this.pending_start {
+                    if this.pending_start
+                        && this.state.result().is_none()
+                        && this.state.error().is_none()
+                    {
                         this.pending_start = false;
                         if available {
                             // Start was requested while the dialog still held

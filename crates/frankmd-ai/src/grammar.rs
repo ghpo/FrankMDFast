@@ -16,6 +16,16 @@ use frankmd_core::text::diff::{DiffKind, compute_word_diff};
 
 use crate::{ProviderInfo, is_ai_note_path};
 
+fn availability_from_config(info: &ProviderInfo) -> Availability {
+    match (&info.provider, &info.model) {
+        (Some(provider), Some(model)) if info.enabled => Availability::Available {
+            provider: provider.as_str().to_owned(),
+            model: model.clone(),
+        },
+        _ => Availability::NotConfigured,
+    }
+}
+
 /// Whether grammar check can run.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Availability {
@@ -151,17 +161,15 @@ pub struct GrammarState {
 impl GrammarState {
     /// Availability from the AI config (`GET /ai/config`, read once).
     pub fn from_config(info: &ProviderInfo) -> Self {
-        let availability = match (&info.provider, &info.model) {
-            (Some(provider), Some(model)) if info.enabled => Availability::Available {
-                provider: provider.as_str().to_owned(),
-                model: model.clone(),
-            },
-            _ => Availability::NotConfigured,
-        };
         Self {
-            availability,
+            availability: availability_from_config(info),
             ..Self::default()
         }
+    }
+
+    /// Update availability without clearing an open diff/error.
+    pub fn set_availability(&mut self, info: &ProviderInfo) {
+        self.availability = availability_from_config(info);
     }
 
     /// Availability.
@@ -430,5 +438,37 @@ impl GrammarState {
         self.hunks.clear();
         self.edited = None;
         self.view = View::Diff;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::AiProviderId;
+
+    fn info(provider: AiProviderId, model: &str) -> ProviderInfo {
+        ProviderInfo {
+            enabled: true,
+            provider: Some(provider),
+            model: Some(model.to_owned()),
+            available_providers: vec![provider],
+        }
+    }
+
+    #[test]
+    fn availability_reload_preserves_an_open_diff() {
+        let mut state = GrammarState::from_config(&info(AiProviderId::Deepseek, "deepseek-chat"));
+        state.result = Some(GrammarResult {
+            original: "Teh".into(),
+            corrected: "The".into(),
+            provider: "deepseek".into(),
+            model: "deepseek-chat".into(),
+        });
+        state.set_availability(&info(AiProviderId::Openrouter, "openai/gpt-4o-mini"));
+        assert!(state.result().is_some(), "reload must not wipe a diff");
+        assert_eq!(
+            state.result().map(|result| result.corrected.as_str()),
+            Some("The")
+        );
     }
 }
