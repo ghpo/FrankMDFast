@@ -95,11 +95,37 @@ pub fn resolve_launch(
             open: Some(abs.display().to_string()),
         };
     }
+    // Opening a note from the desktop/recent list must still use its vault,
+    // not the note's immediate folder. Prefer the default ~/notes root, then
+    // the nearest ancestor that has a `.fed`.
+    if let Some(root) = home
+        .map(|home| home.join("notes"))
+        .filter(|root| abs.starts_with(root))
+    {
+        return Launch {
+            vault_root: root,
+            open: Some(abs.display().to_string()),
+        };
+    }
+    if let Some(root) = nearest_config_root(&abs) {
+        return Launch {
+            vault_root: root,
+            open: Some(abs.display().to_string()),
+        };
+    }
     let parent = abs.parent().map_or_else(default_root, Path::to_path_buf);
     Launch {
         vault_root: parent,
         open: Some(abs.display().to_string()),
     }
+}
+
+/// The nearest ancestor of a note that owns a `.fed` file.
+fn nearest_config_root(note: &Path) -> Option<PathBuf> {
+    note.parent()?
+        .ancestors()
+        .find(|dir| dir.join(".fed").is_file())
+        .map(Path::to_path_buf)
 }
 
 /// Socket of the primary instance (`$XDG_RUNTIME_DIR/frankmdfast.sock`).
@@ -182,7 +208,7 @@ pub fn listen(_socket: &Path, _deliver: impl Fn(Launch) + Send + 'static) -> std
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 mod tests {
     use super::*;
 
@@ -229,6 +255,41 @@ mod tests {
             Launch {
                 vault_root: "/n".into(),
                 open: Some("/n/blog/a.md".into())
+            }
+        );
+    }
+
+    #[test]
+    fn note_inside_home_notes_uses_home_notes_without_notes_path() {
+        let l = resolve_launch(
+            Some(Path::new("/home/u/notes/blog/a.md")),
+            Path::new("/"),
+            None,
+            Some(Path::new("/home/u")),
+        );
+        assert_eq!(
+            l,
+            Launch {
+                vault_root: "/home/u/notes".into(),
+                open: Some("/home/u/notes/blog/a.md".into())
+            }
+        );
+    }
+
+    #[test]
+    fn note_uses_nearest_fed_ancestor() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path().join("vault");
+        let note = vault.join("sub/a.md");
+        std::fs::create_dir_all(note.parent().unwrap()).unwrap();
+        std::fs::write(vault.join(".fed"), "").unwrap();
+        std::fs::write(&note, "# a\n").unwrap();
+        let l = resolve_launch(Some(&note), Path::new("/"), None, None);
+        assert_eq!(
+            l,
+            Launch {
+                vault_root: vault,
+                open: Some(note.display().to_string())
             }
         );
     }
