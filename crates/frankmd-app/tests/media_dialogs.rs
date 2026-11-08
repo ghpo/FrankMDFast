@@ -50,6 +50,7 @@ fn context(dir: &Path) -> MediaContext {
         state_dir: state,
         env: frankmd_config::EnvSnapshot::default(),
         encryption: std::sync::Arc::new(frankmd_crypto::Session::new()),
+        global_config: None,
     }
 }
 

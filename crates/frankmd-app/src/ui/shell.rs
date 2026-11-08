@@ -280,6 +280,7 @@ impl Shell {
             state_dir: config.state_dir.clone(),
             env: config.env.clone(),
             encryption: Arc::clone(&encryption),
+            global_config: config.global_config.clone(),
         });
         let (media, media_subs) = super::media_host::MediaHost::new(media_ctx, window, cx);
         let preview = cx.new(|cx| crate::preview::PreviewPane::new(window, cx));

@@ -39,6 +39,7 @@ button { cursor: pointer; }
 .spacer { flex: 1; }
 
 #topbar {
+  position: relative; z-index: 40;
   display: flex; align-items: center; gap: 6px;
   height: 46px; padding: 0 10px;
   background: var(--bg-secondary);

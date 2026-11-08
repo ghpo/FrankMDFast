@@ -131,7 +131,7 @@ async fn login_sets_the_digest_cookie_and_csrf_is_enforced() {
         .to_owned();
     assert!(cookie.contains("frankmd_auth_token_digest="));
     assert!(cookie.contains("HttpOnly"));
-    assert!(cookie.contains("SameSite=Strict"));
+    assert!(cookie.contains("SameSite=Lax"));
     let value = cookie
         .split(';')
         .next()

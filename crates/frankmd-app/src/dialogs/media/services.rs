@@ -25,6 +25,8 @@ pub struct MediaContext {
     pub env: EnvSnapshot,
     /// Note/media encryption session.
     pub encryption: Arc<frankmd_crypto::Session>,
+    /// Global settings file (`config.toml`), when enabled.
+    pub global_config: Option<PathBuf>,
 }
 
 /// `.fed` as the media layer's [`SettingsStore`]: every `current()` re-reads
@@ -37,10 +39,14 @@ pub struct FedSettings {
 }
 
 impl FedSettings {
-    fn new(vault: frankmd_fs::Vault, env: EnvSnapshot) -> Self {
+    fn new(vault: frankmd_fs::Vault, env: EnvSnapshot, global_config: Option<PathBuf>) -> Self {
         let notes_root = vault.root().to_path_buf();
+        let mut store = ConfigStore::open(vault, env);
+        if let Some(path) = global_config {
+            store = store.with_global(path);
+        }
         Self {
-            store: Mutex::new(ConfigStore::open(vault, env)),
+            store: Mutex::new(store),
             notes_root,
         }
     }
@@ -104,7 +110,11 @@ impl MediaServices {
     /// Wire the services of `ctx` (opens `.fed` once; no network).
     pub fn new(ctx: &MediaContext) -> anyhow::Result<Arc<Self>> {
         let vault = frankmd_fs::Vault::open(&ctx.vault_root, &ctx.state_dir)?;
-        let settings = Arc::new(FedSettings::new(vault.clone(), ctx.env.clone()));
+        let settings = Arc::new(FedSettings::new(
+            vault.clone(),
+            ctx.env.clone(),
+            ctx.global_config.clone(),
+        ));
         let http = frankmd_net::TrustedClient::new()?;
         let egress = frankmd_net::EgressClient::new(frankmd_net::Limits::EXTERNAL_IMAGE)?;
         let env = MediaEnv::new(settings.clone(), MediaCtx::system(), http.clone(), egress);

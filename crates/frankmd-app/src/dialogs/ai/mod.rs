@@ -200,6 +200,11 @@ impl GrammarDialog {
         cx: &mut Context<Self>,
     ) {
         self.text = text;
+        if !self.state.in_flight() {
+            // Settings may have changed since this dialog was created; never
+            // show the setup screen with a stale provider/model.
+            self.state = GrammarState::from_config(&self.services.ai().provider_info());
+        }
         match self.state.start(path.as_deref(), &self.text) {
             Ok(effects) => self.run(effects, window, cx),
             Err(StartError::NotConfigured) => {

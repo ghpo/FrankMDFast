@@ -286,13 +286,13 @@ async fn login_submit(
         ""
     };
     let cookie = format!(
-        "{COOKIE_NAME}={}; Path=/; HttpOnly; SameSite=Strict{max_age}",
+        "{COOKIE_NAME}={}; Path=/; HttpOnly; SameSite=Lax{max_age}",
         state.auth.cookie_value()
     );
     ([(header::SET_COOKIE, cookie)], Redirect::to("/")).into_response()
 }
 
 async fn logout() -> Response {
-    let cookie = format!("{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+    let cookie = format!("{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
     ([(header::SET_COOKIE, cookie)], Redirect::to("/login")).into_response()
 }
