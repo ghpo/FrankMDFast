@@ -105,6 +105,8 @@ editor/preview toggle, save, **Encrypt/Decrypt note**, content lock/unlock and
 logout. Desktop-only controls (Settings, themes, media library, AI image,
 finder/search) stay on the desktop client. **Remember this device** keeps the
 HttpOnly token cookie for one year; uncheck it for a session-only cookie.
+The mobile page uses a native-style fixed layout, disables pinch zoom/page pan
+and keeps the notes drawer above the content.
 
 **From another machine:** install Tailscale there, open
 `http://<tailscale-ip>:8787` in a browser and paste the token. No FrankMDFast

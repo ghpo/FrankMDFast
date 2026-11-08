@@ -310,7 +310,10 @@
     row.dataset.path = node.path;
     if (node.path === state.openPath) row.classList.add("active");
     row.append(el("span", { class: "icon" }, "▤"), el("span", { class: "label" }, node.name));
-    row.addEventListener("click", () => openNote(node.path));
+    row.addEventListener("click", () => {
+      openNote(node.path);
+      closeSidebar();
+    });
     row.addEventListener("contextmenu", (ev) => {
       ev.preventDefault();
       showMenu(ev.clientX, ev.clientY, [
@@ -329,7 +332,10 @@
       for (const item of data.recent || []) {
         const li = el("li");
         const button = el("button", { class: "recent-item" }, item.path);
-        button.addEventListener("click", () => openNote(item.path));
+        button.addEventListener("click", () => {
+          openNote(item.path);
+          closeSidebar();
+        });
         li.appendChild(button);
         list.appendChild(li);
       }
@@ -357,7 +363,6 @@
       updateNoteCryptoButton();
       renderTree();
       schedulePreview();
-      closeSidebar();
       await api("/api/recent", { method: "POST", body: { path: data.path } }).catch(() => {});
       loadRecent();
     } catch (err) {
@@ -597,7 +602,11 @@
         results.replaceChildren();
         for (const file of data.files || []) {
           const item = el("button", { class: "finder-item" }, file.path);
-          item.addEventListener("click", () => { closeOverlay(); openNote(file.path); });
+          item.addEventListener("click", () => {
+            closeOverlay();
+            closeSidebar();
+            openNote(file.path);
+          });
           results.appendChild(item);
         }
         if (!results.children.length) results.appendChild(el("p", { class: "empty" }, t("sidebar.no_files_found", "No files found")));
@@ -627,7 +636,11 @@
         for (const hit of data.hits) {
           const card = el("div", { class: "search-hit" });
           const head = el("button", { class: "search-hit-path" }, `${hit.path}:${hit.line_number}`);
-          head.addEventListener("click", () => { closeOverlay(); openNote(hit.path).then(() => jumpToLine(hit.line_number)); });
+          head.addEventListener("click", () => {
+            closeOverlay();
+            closeSidebar();
+            openNote(hit.path).then(() => jumpToLine(hit.line_number));
+          });
           card.appendChild(head);
           const pre = el("pre", { class: "search-context" });
           for (const line of hit.context) {
@@ -948,6 +961,13 @@
     document.addEventListener("click", (ev) => {
       if (!ev.target.closest("#menu")) hideMenu();
     });
+    document.addEventListener("gesturestart", (ev) => ev.preventDefault(), { passive: false });
+    document.addEventListener("wheel", (ev) => {
+      if (ev.ctrlKey) ev.preventDefault();
+    }, { passive: false });
+    document.addEventListener("touchmove", (ev) => {
+      if (ev.touches.length > 1) ev.preventDefault();
+    }, { passive: false });
     document.addEventListener("keydown", (ev) => {
       const mod = ev.ctrlKey || ev.metaKey;
       if (mod && ev.key.toLowerCase() === "p") { ev.preventDefault(); openFinder(); }
