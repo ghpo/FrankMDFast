@@ -100,6 +100,12 @@ frankmdfast --serve ~/notes        # desktop window + remote server
 # then open http://<tailscale-ip>:8787 and paste the token
 ```
 
+**Mobile:** the remote client has a dedicated single-column mode: notes drawer,
+editor/preview toggle, save, **Encrypt/Decrypt note**, content lock/unlock and
+logout. Desktop-only controls (Settings, themes, media library, AI image,
+finder/search) stay on the desktop client. **Remember this device** keeps the
+HttpOnly token cookie for one year; uncheck it for a session-only cookie.
+
 **From another machine:** install Tailscale there, open
 `http://<tailscale-ip>:8787` in a browser and paste the token. No FrankMDFast
 install is needed — the browser is the remote client. If you want the native

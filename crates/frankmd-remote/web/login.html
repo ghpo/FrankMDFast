@@ -23,6 +23,8 @@
     button { width: 100%; margin-top: 16px; padding: 10px; border: 0; border-radius: 8px;
       background: #7aa2f7; color: #16161e; font: inherit; font-weight: 600; cursor: pointer; }
     button:hover { background: #89b4fa; }
+    .remember { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #a9b1d6; }
+    .remember input { width: auto; accent-color: #7aa2f7; }
     .error { display: none; margin-top: 12px; color: #f7768e; font-size: 13px; }
     .error.show { display: block; }
     small { display: block; margin-top: 18px; color: #565f89; font-size: 12px; }
@@ -36,6 +38,7 @@
       <label for="password">Access token</label>
       <input id="password" name="password" type="password" autocomplete="current-password"
              autofocus required minlength="32">
+      <label class="remember"><input id="remember" name="remember" type="checkbox" checked> Remember this device</label>
       <button type="submit">Sign in</button>
     </form>
     <p id="error" class="error">Invalid access token.</p>

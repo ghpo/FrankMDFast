@@ -2950,6 +2950,7 @@ dependencies = [
  "http-body-util",
  "jiff",
  "mime_guess",
+ "percent-encoding",
  "serde",
  "serde_json",
  "sha2 0.11.1",

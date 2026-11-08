@@ -33,6 +33,7 @@ thiserror.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 mime_guess.workspace = true
+percent-encoding = "2.3"
 jiff.workspace = true
 
 [dev-dependencies]

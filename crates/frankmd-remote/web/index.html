@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#16161e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>FrankMDFast — Remote</title>
   <link rel="stylesheet" href="/assets/style.css">
   <script src="/assets/app.js" defer></script>
@@ -14,19 +16,23 @@
     <div id="crumb"><span id="vault-name">notes</span><span id="doc-name"></span></div>
     <div class="spacer"></div>
     <span id="save-status" class="status"></span>
-    <button id="btn-finder" class="icon" title="Find file (Ctrl+P)">⌕</button>
-    <button id="btn-search" class="icon" title="Search in files (Ctrl+Shift+F)">⌕⁺</button>
+    <button id="btn-save" class="icon mobile-only" title="Save">✓</button>
+    <button id="btn-preview" class="icon mobile-only" title="Show preview">◉</button>
+    <button id="btn-note-crypto" class="icon mobile-only" title="Encrypt note">⚿</button>
+    <button id="btn-finder" class="icon desktop-only" title="Find file (Ctrl+P)">⌕</button>
+    <button id="btn-search" class="icon desktop-only" title="Search in files (Ctrl+Shift+F)">⌕⁺</button>
     <button id="btn-new-note" class="icon" title="New note (Ctrl+N)">＋</button>
-    <button id="btn-ai" class="icon" title="Fix grammar with AI">✎</button>
-    <button id="btn-ai-image" class="icon" title="Generate an image with AI">✦</button>
-    <button id="btn-theme" class="icon" title="Theme">◐</button>
-    <button id="btn-settings" class="icon" title="Settings">⚙</button>
-    <button id="btn-library" class="icon" title="Media library">▦</button>
+    <button id="btn-ai" class="icon desktop-only" title="Fix grammar with AI">✎</button>
+    <button id="btn-ai-image" class="icon desktop-only" title="Generate an image with AI">✦</button>
+    <button id="btn-theme" class="icon desktop-only" title="Theme">◐</button>
+    <button id="btn-settings" class="icon desktop-only" title="Settings">⚙</button>
+    <button id="btn-library" class="icon desktop-only" title="Media library">▦</button>
     <button id="btn-lock-crypto" class="icon" title="Lock encrypted content">⚿</button>
     <button id="btn-logout" class="icon" title="Log out">⏻</button>
   </header>
 
   <div id="layout">
+    <div id="sidebar-backdrop" class="hidden"></div>
     <aside id="sidebar">
       <div class="side-search">
         <input id="filter" type="search" placeholder="Filter notes…" autocomplete="off">

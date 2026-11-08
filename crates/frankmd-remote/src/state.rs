@@ -38,6 +38,8 @@ pub struct RemoteConfig {
     pub locale: Option<String>,
     /// Trash backend override (tests/headless); `None` = the OS trash.
     pub trash_dir: Option<PathBuf>,
+    /// Global settings file (`~/.config/frankmdfast/config.toml`), if any.
+    pub global_config: Option<PathBuf>,
 }
 
 /// `.fed` as the media layer's [`SettingsStore`] (fresh read per call).
@@ -48,10 +50,14 @@ pub struct FedSettings {
 }
 
 impl FedSettings {
-    fn new(vault: Vault, env: EnvSnapshot) -> Self {
+    fn new(vault: Vault, env: EnvSnapshot, global_config: Option<PathBuf>) -> Self {
         let notes_root = vault.root().to_path_buf();
+        let mut store = ConfigStore::open(vault, env);
+        if let Some(path) = global_config {
+            store = store.with_global(path);
+        }
         Self {
-            store: Mutex::new(ConfigStore::open(vault, env)),
+            store: Mutex::new(store),
             notes_root,
         }
     }
@@ -177,7 +183,11 @@ impl ServerState {
             None => frankmd_crypto::Session::new(),
         });
         vault.set_encryption(Some(Arc::clone(&encryption)));
-        let settings = Arc::new(FedSettings::new(vault.clone(), config.env.clone()));
+        let settings = Arc::new(FedSettings::new(
+            vault.clone(),
+            config.env.clone(),
+            config.global_config.clone(),
+        ));
         let media = MediaStack::new(&vault, Arc::clone(&settings))?;
         let auth = AuthConfig::new(&config.token)?;
         let (events, _) = broadcast::channel(256);

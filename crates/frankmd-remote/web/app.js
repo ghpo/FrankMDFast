@@ -27,6 +27,8 @@
     translations: {},
     themeList: [],
     previewVisible: true,
+    mobileView: "editor",
+    encrypted: false,
     filter: "",
     events: null,
   };
@@ -114,7 +116,7 @@
   }
 
   const q = (value) => encodeURIComponent(value);
-  const notePath = (path) => q(path.split("/").map(encodeURIComponent).join("/"));
+  const notePath = (path) => path.split("/").map(encodeURIComponent).join("/");
 
   /// Resolve a relative media path against the open note's folder.
   function resolveRelative(baseDir, src) {
@@ -346,18 +348,65 @@
       const data = await api(`/api/note?path=${notePath(path)}`);
       state.openPath = data.path;
       state.revision = data.revision;
+      state.encrypted = !!data.encrypted;
       state.dirty = false;
       state.lastSavedAt = null;
       $("#editor").value = data.content;
       $("#editor").readOnly = !!data.read_only;
       updateEditorChrome();
+      updateNoteCryptoButton();
       renderTree();
       schedulePreview();
+      closeSidebar();
       await api("/api/recent", { method: "POST", body: { path: data.path } }).catch(() => {});
       loadRecent();
     } catch (err) {
       toast(err.message, "error");
     }
+  }
+
+  const mobileQuery = window.matchMedia("(max-width: 760px)");
+  const isMobile = () => mobileQuery.matches;
+
+  function setSidebar(open) {
+    const sidebar = $("#sidebar");
+    const backdrop = $("#sidebar-backdrop");
+    sidebar.classList.toggle("collapsed", !open);
+    backdrop.classList.toggle("hidden", !open);
+  }
+
+  function closeSidebar() {
+    if (isMobile()) setSidebar(false);
+  }
+
+  function setMobileView(view) {
+    state.mobileView = view;
+    document.body.classList.toggle("mobile-preview", view === "preview");
+    const button = $("#btn-preview");
+    if (button) button.title = view === "preview" ? "Show editor" : "Show preview";
+    closeSidebar();
+  }
+
+  function updateNoteCryptoButton() {
+    const button = $("#btn-note-crypto");
+    if (!button) return;
+    button.disabled = !state.openPath;
+    button.title = state.encrypted ? "Descriptografar nota" : "Criptografar nota";
+    button.textContent = state.encrypted ? "🔓" : "🔒";
+  }
+
+  async function toggleNoteEncryption() {
+    if (!state.openPath) return;
+    if (state.dirty && !(await saveNow())) return;
+    const encrypted = !state.encrypted;
+    try {
+      await api("/api/note/encryption", {
+        method: "POST",
+        body: { path: state.openPath, encrypted },
+      });
+      await openNote(state.openPath);
+      toast(encrypted ? "Nota criptografada" : "Nota descriptografada");
+    } catch (err) { toast(err.message, "error"); }
   }
 
   function updateEditorChrome() {
@@ -867,9 +916,14 @@
       renderTree();
     });
     $("#toggle-sidebar").addEventListener("click", () => {
-      $("#sidebar").classList.toggle("collapsed");
-      $("#workspace").classList.toggle("wide");
+      setSidebar($("#sidebar").classList.contains("collapsed"));
     });
+    $("#sidebar-backdrop").addEventListener("click", () => setSidebar(false));
+    $("#btn-save").addEventListener("click", () => saveNow());
+    $("#btn-preview").addEventListener("click", () => {
+      setMobileView(state.mobileView === "preview" ? "editor" : "preview");
+    });
+    $("#btn-note-crypto").addEventListener("click", toggleNoteEncryption);
     $("#btn-finder").addEventListener("click", openFinder);
     $("#btn-search").addEventListener("click", openSearch);
     $("#btn-new-note").addEventListener("click", () => newNote(""));
@@ -917,6 +971,11 @@
     loadRecent();
     connectEvents();
     updateEditorChrome();
+    updateNoteCryptoButton();
+    if (isMobile()) {
+      setSidebar(false);
+      setMobileView("editor");
+    }
     const params = new URLSearchParams(location.search);
     if (params.get("file")) openNote(params.get("file"));
   }

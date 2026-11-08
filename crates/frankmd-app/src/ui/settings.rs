@@ -1672,6 +1672,7 @@ impl Shell {
             port: prefs.remote_port,
             token,
             locale: self.locale_override.map(|locale| locale.code().to_owned()),
+            global_config: self.global_config.clone(),
         })
     }
 
@@ -1809,6 +1810,15 @@ impl Shell {
                 }
             };
             changes.push((key, value));
+        }
+        if changes
+            .iter()
+            .any(|(key, _)| matches!(key, Key::DeepseekApiKey | Key::DeepseekModel))
+            && !changes.iter().any(|(key, _)| *key == Key::AiProvider)
+        {
+            // "Save and test" with a DeepSeek field is an explicit request to
+            // use DeepSeek; keep an old OpenRouter provider from shadowing it.
+            changes.push((Key::AiProvider, Some(Value::Str("deepseek".to_owned()))));
         }
         if !changes.is_empty() {
             self.write_settings(changes, window, cx);

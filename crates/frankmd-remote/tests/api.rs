@@ -38,6 +38,7 @@ fn app() -> TestApp {
         token: TOKEN.to_owned(),
         locale: None,
         trash_dir: Some(trash.path().to_path_buf()),
+        global_config: None,
     };
     let state = ServerState::new(&config).unwrap();
     state
@@ -517,6 +518,7 @@ async fn short_tokens_are_refused_at_startup() {
         token: "short".to_owned(),
         locale: None,
         trash_dir: None,
+        global_config: None,
     };
     assert!(ServerState::new(&config).is_err());
 }
@@ -667,4 +669,90 @@ async fn encrypted_notes_and_media_lock_unlock() {
     )
     .await;
     assert_eq!(status, StatusCode::LOCKED);
+}
+
+#[tokio::test]
+async fn login_remember_sets_a_one_year_cookie() {
+    let app = app();
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from(format!("password={TOKEN}&remember=on")))
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let cookie = response
+        .headers()
+        .get(header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(cookie.contains("Max-Age=31536000"), "{cookie}");
+}
+
+#[tokio::test]
+async fn login_without_remember_uses_a_session_cookie() {
+    let app = app();
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from(format!("password={TOKEN}")))
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    let cookie = response
+        .headers()
+        .get(header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(!cookie.contains("Max-Age"), "{cookie}");
+}
+
+#[allow(clippy::disallowed_methods)]
+#[tokio::test]
+async fn note_encryption_toggles_note_and_attachment() {
+    use frankmd_fs::atomic::{ModePolicy, atomic_replace};
+
+    let app = app();
+    app.state.encryption.create("test password 1234").unwrap();
+    let vault = app.dir.path().join("notes");
+    std::fs::create_dir_all(vault.join("Quick Notes")).unwrap();
+    std::fs::create_dir_all(vault.join("images")).unwrap();
+    atomic_replace(
+        &vault.join("Quick Notes/Teste de Nota.md"),
+        b"![x](../images/pic.png)\n",
+        ModePolicy::Preserve,
+    )
+    .unwrap();
+    atomic_replace(
+        &vault.join("images/pic.png"),
+        b"PNGDATA",
+        ModePolicy::Preserve,
+    )
+    .unwrap();
+    let uri = "/api/note/encryption";
+    let (status, body) = call_auth(
+        &app.router,
+        Method::POST,
+        uri,
+        Some(json!({"path": "Quick Notes/Teste de Nota.md", "encrypted": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(frankmd_crypto::is_media_encrypted(
+        &std::fs::read(vault.join("images/pic.png")).unwrap()
+    ));
+    let (status, body) = call_auth(
+        &app.router,
+        Method::POST,
+        uri,
+        Some(json!({"path": "Quick Notes/Teste de Nota.md", "encrypted": false})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!frankmd_crypto::is_media_encrypted(
+        &std::fs::read(vault.join("images/pic.png")).unwrap()
+    ));
 }

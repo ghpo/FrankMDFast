@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::path::{Path as FsPath, PathBuf};
 
 use frankmd_core::hugo::{self, HugoPathStyle};
 use frankmd_core::path::normalize_note_path;
@@ -314,4 +315,215 @@ pub async fn get_asset(
         bytes,
     )
         .into_response())
+}
+
+/// `POST /api/note/encryption` (`{path, encrypted}`).
+#[derive(Debug, Deserialize)]
+pub struct NoteEncryptionBody {
+    /// Note path.
+    pub path: String,
+    /// `true` to encrypt, `false` to decrypt.
+    pub encrypted: bool,
+}
+
+/// `{path, encrypted, attachments}`.
+pub async fn set_note_encryption(
+    State(state): State<AppState>,
+    Json(body): Json<NoteEncryptionBody>,
+) -> Result<Json<Value>, ApiError> {
+    if !state.encryption.is_unlocked() {
+        return Err(ApiError::new(
+            StatusCode::LOCKED,
+            "locked",
+            "Unlock encryption before changing note encryption.",
+        ));
+    }
+    let path = note_path(&body.path)?;
+    let service = state.notes();
+    let note = service.read(&path).map_err(|e| fs_error(&e))?;
+    let source = String::from_utf8_lossy(&note.bytes).into_owned();
+    let attachments = local_attachments(&path, &source, state.vault.root());
+
+    if body.encrypted {
+        let mut changed = Vec::new();
+        for attachment in &attachments {
+            match encrypt_media_file(&state.encryption, attachment) {
+                Ok(true) => changed.push(attachment.clone()),
+                Ok(false) => {}
+                Err(err) => {
+                    rollback_media(&state.encryption, &changed);
+                    return Err(ApiError::internal(err));
+                }
+            }
+        }
+        if !note.encrypted
+            && let Err(err) = service.set_encrypted(&path, true)
+        {
+            rollback_media(&state.encryption, &changed);
+            return Err(fs_error(&err));
+        }
+    } else {
+        if note.encrypted
+            && let Err(err) = service.set_encrypted(&path, false)
+        {
+            return Err(fs_error(&err));
+        }
+        let shared = match encrypted_note_attachments(&state, &service, &path) {
+            Ok(shared) => shared,
+            Err(err) => {
+                tracing::warn!(%err, "could not verify encrypted notes; keeping attachments encrypted");
+                return Ok(Json(json!({
+                    "path": path,
+                    "encrypted": false,
+                    "attachments": attachments.len(),
+                    "warning": "attachments kept encrypted: could not verify other encrypted notes"
+                })));
+            }
+        };
+        for attachment in &attachments {
+            if !frankmd_crypto::is_media_encrypted(&std::fs::read(attachment).unwrap_or_default())
+                || shared.contains(attachment)
+            {
+                continue;
+            }
+            let _ = decrypt_media_file(&state.encryption, attachment);
+        }
+    }
+
+    let refreshed = service.read(&path).map_err(|e| fs_error(&e))?;
+    Ok(Json(json!({
+        "path": path,
+        "encrypted": refreshed.encrypted,
+        "attachments": attachments.len()
+    })))
+}
+
+fn encrypt_media_file(session: &frankmd_crypto::Session, path: &FsPath) -> Result<bool, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    if frankmd_crypto::is_media_encrypted(&bytes) {
+        return Ok(false);
+    }
+    let encrypted = session.encrypt_media(&bytes).map_err(|e| e.to_string())?;
+    frankmd_fs::atomic::atomic_replace(path, &encrypted, frankmd_fs::atomic::ModePolicy::Preserve)
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn decrypt_media_file(session: &frankmd_crypto::Session, path: &FsPath) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    if !frankmd_crypto::is_media_encrypted(&bytes) {
+        return Ok(());
+    }
+    let plain = session.decrypt_media(&bytes).map_err(|e| e.to_string())?;
+    frankmd_fs::atomic::atomic_replace(path, &plain, frankmd_fs::atomic::ModePolicy::Preserve)
+        .map_err(|e| e.to_string())
+}
+
+fn rollback_media(session: &frankmd_crypto::Session, paths: &[PathBuf]) {
+    for path in paths.iter().rev() {
+        if let Err(err) = decrypt_media_file(session, path) {
+            tracing::warn!(path = %path.display(), %err, "could not roll back attachment encryption");
+        }
+    }
+}
+
+fn local_attachments(note: &str, source: &str, root: &FsPath) -> Vec<PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for href in frankmd_media::usage::references_in(source) {
+        let Some(path) = resolve_attachment(note, &href, root) else {
+            continue;
+        };
+        if seen.insert(path.clone()) {
+            out.push(path);
+        }
+    }
+    out
+}
+
+fn resolve_attachment(note: &str, href: &str, root: &FsPath) -> Option<PathBuf> {
+    let href = href.trim();
+    if href.is_empty()
+        || href.starts_with("//")
+        || href
+            .split_once(':')
+            .is_some_and(|(scheme, _)| !scheme.is_empty())
+    {
+        return None;
+    }
+    let path = href.split(['#', '?']).next().unwrap_or_default();
+    let decoded = percent_encoding::percent_decode_str(path)
+        .decode_utf8_lossy()
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"");
+    let mut parts: Vec<&str> = if decoded.starts_with('/') {
+        Vec::new()
+    } else {
+        note.rsplit_once('/')
+            .map(|(dir, _)| dir.split('/').collect())
+            .unwrap_or_default()
+    };
+    for segment in decoded.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            _ => parts.push(segment),
+        }
+    }
+    let rel = parts.join("/");
+    if rel.is_empty() || rel.ends_with(".md") || rel.ends_with(".fed") {
+        return None;
+    }
+    let full = root.join(&rel);
+    if !full.starts_with(root) {
+        return None;
+    }
+    let meta = std::fs::symlink_metadata(&full).ok()?;
+    (meta.is_file() && !meta.file_type().is_symlink()).then_some(full)
+}
+
+fn encrypted_note_attachments(
+    state: &crate::state::ServerState,
+    service: &NotesService<'_>,
+    current: &str,
+) -> Result<std::collections::HashSet<PathBuf>, String> {
+    let mut out = std::collections::HashSet::new();
+    let tree = state.vault.list_tree().map_err(|e| e.to_string())?;
+    fn walk(
+        nodes: &[frankmd_core::tree::TreeNode],
+        current: &str,
+        state: &crate::state::ServerState,
+        service: &NotesService<'_>,
+        out: &mut std::collections::HashSet<PathBuf>,
+    ) -> Result<(), String> {
+        for node in nodes {
+            match node {
+                frankmd_core::tree::TreeNode::Folder { children, .. } => {
+                    walk(children, current, state, service, out)?;
+                }
+                frankmd_core::tree::TreeNode::File { path, .. } => {
+                    let path = path.as_str();
+                    if path == current {
+                        continue;
+                    }
+                    let Ok((encrypted, _)) = state.vault.note_encryption(path) else {
+                        continue;
+                    };
+                    if !encrypted {
+                        continue;
+                    }
+                    let note = service.read(path).map_err(|e| e.to_string())?;
+                    let source = String::from_utf8_lossy(&note.bytes);
+                    for attachment in local_attachments(path, &source, state.vault.root()) {
+                        out.insert(attachment);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    walk(&tree, current, state, service, &mut out)?;
+    Ok(out)
 }

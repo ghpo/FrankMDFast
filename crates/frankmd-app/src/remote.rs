@@ -116,6 +116,8 @@ pub struct RemoteRequest {
     pub token: String,
     /// UI locale override.
     pub locale: Option<String>,
+    /// Global settings file (`config.toml`).
+    pub global_config: Option<PathBuf>,
 }
 
 /// A server ready to bind (used by the `--serve-only` daemon).
@@ -168,6 +170,7 @@ pub fn build_request(
         port,
         token,
         locale: cli.locale.clone(),
+        global_config: Some(frankmd_config::global::global_config_path(dirs)),
     })
 }
 
@@ -187,6 +190,7 @@ pub fn prepare_request(request: &RemoteRequest) -> anyhow::Result<RemoteLaunch> 
         token: request.token.clone(),
         locale: request.locale.clone(),
         trash_dir: None,
+        global_config: request.global_config.clone(),
     };
     let state = ServerState::new(&config).context("could not open the vault for remote access")?;
     if let Err(err) = state.start_watchers() {
@@ -553,6 +557,7 @@ mod tests {
             port: 8787,
             token: "x".to_owned(),
             locale: None,
+            global_config: None,
         };
         write_unit(&config_dir, &request).unwrap();
         let unit = std::fs::read_to_string(unit_path(&config_dir)).unwrap();

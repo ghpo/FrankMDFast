@@ -47,6 +47,10 @@ pub fn build_router(state: Arc<ServerState>) -> Router {
         )
         .route("/api/note/rename", post(handlers::notes::rename_note))
         .route(
+            "/api/note/encryption",
+            post(handlers::notes::set_note_encryption),
+        )
+        .route(
             "/api/folder",
             post(handlers::notes::create_folder).delete(handlers::notes::delete_folder),
         )
@@ -257,6 +261,8 @@ async fn login_page() -> Html<&'static str> {
 #[derive(Debug, Deserialize)]
 struct LoginForm {
     password: String,
+    #[serde(default)]
+    remember: Option<String>,
 }
 
 async fn login_submit(
@@ -274,8 +280,13 @@ async fn login_submit(
         return Redirect::to("/login?error=invalid").into_response();
     }
     state.auth.reset_failures(ip);
+    let max_age = if form.remember.is_some() {
+        "; Max-Age=31536000"
+    } else {
+        ""
+    };
     let cookie = format!(
-        "{COOKIE_NAME}={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000",
+        "{COOKIE_NAME}={}; Path=/; HttpOnly; SameSite=Strict{max_age}",
         state.auth.cookie_value()
     );
     ([(header::SET_COOKIE, cookie)], Redirect::to("/")).into_response()
