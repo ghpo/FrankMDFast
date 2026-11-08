@@ -171,12 +171,12 @@ where
     .await
 }
 
-async fn index() -> Html<&'static str> {
-    Html(web::INDEX_HTML)
+async fn index() -> Response {
+    ([(header::CACHE_CONTROL, "no-store")], Html(web::INDEX_HTML)).into_response()
 }
 
 async fn asset(Path(file): Path<String>) -> Response {
-    match file.as_str() {
+    let mut response = match file.as_str() {
         "app.js" => (
             [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
             web::APP_JS,
@@ -192,8 +192,12 @@ async fn asset(Path(file): Path<String>) -> Response {
             web::LOGIN_JS,
         )
             .into_response(),
-        _ => StatusCode::NOT_FOUND.into_response(),
-    }
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 async fn fallback(request: Request) -> Response {
