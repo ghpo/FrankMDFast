@@ -12,7 +12,9 @@ use crate::scale::px;
 use std::ops::Range;
 use std::sync::Arc;
 
-use frankmd_ai::grammar::{GrammarEffect, GrammarResult, GrammarState, Segment, StartError, View};
+use frankmd_ai::grammar::{
+    Availability, GrammarEffect, GrammarResult, GrammarState, Segment, StartError, View,
+};
 use frankmd_ai::{AiRequestError, NoteSource};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
@@ -169,6 +171,16 @@ impl GrammarDialog {
             this.update(cx, |this, cx| {
                 if !this.state.in_flight() {
                     this.state = GrammarState::from_config(&info);
+                    if !matches!(this.state.availability(), Availability::NotConfigured)
+                        && this.open
+                        && this.state.result().is_none()
+                    {
+                        // The setup screen was opened while the config was
+                        // stale. Close it as soon as a provider is available;
+                        // the user can invoke the check again.
+                        this.open = false;
+                        cx.emit(GrammarEvent::Closed);
+                    }
                 }
                 cx.notify();
             })
@@ -577,10 +589,26 @@ impl GrammarDialog {
                 },
             )))
             .child(
-                Button::new("grammar-open-settings")
-                    .small()
-                    .label(t(cx, "media_dialogs.open_settings"))
-                    .on_click(cx.listener(|_, _, _, cx| cx.emit(GrammarEvent::OpenSettings))),
+                h_flex()
+                    .gap_2()
+                    .child(
+                        Button::new("grammar-reload-config")
+                            .small()
+                            .outline()
+                            .label(t(cx, "media_dialogs.retry"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.reload_config(cx);
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("grammar-open-settings")
+                            .small()
+                            .label(t(cx, "media_dialogs.open_settings"))
+                            .on_click(
+                                cx.listener(|_, _, _, cx| cx.emit(GrammarEvent::OpenSettings)),
+                            ),
+                    ),
             )
     }
 
