@@ -102,6 +102,8 @@ pub fn fs_error(err: &FsError) -> ApiError {
         }
         FsError::NotEmpty(message) => ApiError::conflict("not_empty", message.clone()),
         FsError::InvalidPath(message) => ApiError::bad_request("invalid_path", message.clone()),
+        FsError::Locked(message) => ApiError::new(StatusCode::LOCKED, "locked", message.clone()),
+        FsError::Crypto(message) => ApiError::internal(message.clone()),
         FsError::PermissionDenied(message) => {
             ApiError::forbidden("permission_denied", message.clone())
         }

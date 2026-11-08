@@ -149,5 +149,7 @@ mod tests {
             "banners.content_loss.undo"
         );
         assert_ne!(cat.t("status.saving", &[]), "status.saving");
+        assert_eq!(cat.t("context_menu.encrypt", &[]), "Criptografar nota");
+        assert_eq!(cat.t("context_menu.decrypt", &[]), "Descriptografar nota");
     }
 }

@@ -3,15 +3,18 @@
 
 pub mod actions;
 pub mod appearance;
+mod attachments;
 mod commands;
 mod editor_host;
 mod editor_pane;
+mod encryption_actions;
 mod explorer;
 mod file_dialogs;
 pub mod fonts;
 mod help;
 pub mod i18n;
 pub(crate) mod icons;
+mod locked_note;
 mod media_host;
 mod navigation;
 mod overlay_view;

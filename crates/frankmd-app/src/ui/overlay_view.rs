@@ -15,6 +15,7 @@ impl Shell {
         let this = cx.entity().downgrade();
         let dismissible = match kind {
             OverlayKind::Dialog("recovery") => false,
+            OverlayKind::Dialog("unlock") => true,
             OverlayKind::Dialog(hosted) => self.hosted_dismissible(hosted, cx),
             _ => true,
         };
@@ -37,6 +38,12 @@ impl Shell {
             }
             OverlayKind::Dialog("recent-switcher") => {
                 self.render_switcher(theme, cx).into_any_element()
+            }
+            OverlayKind::Dialog("unlock") => {
+                self.render_unlock_dialog(theme, cx).into_any_element()
+            }
+            OverlayKind::Dialog("attachments") => {
+                self.render_attachments_dialog(theme, cx).into_any_element()
             }
             OverlayKind::Dialog(kind) => match self.hosted_dialog(kind) {
                 Some(view) => view,

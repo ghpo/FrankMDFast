@@ -29,6 +29,7 @@ frankmd-watch.workspace = true
 frankmd-vim.workspace = true
 frankmd-workspace.workspace = true
 frankmd-remote.workspace = true
+frankmd-crypto.workspace = true
 
 gpui-kit.workspace = true
 ratex-parser.workspace = true

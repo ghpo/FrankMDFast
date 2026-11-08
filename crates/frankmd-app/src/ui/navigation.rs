@@ -21,11 +21,7 @@ impl Shell {
         let target = frankmd_workspace::startup::resolve_initial_note(
             &[root.as_path(), real.as_path()],
             arg,
-            |p| {
-                frankmd_fs::service::NotesService::new(&vault)
-                    .read(p.as_str())
-                    .is_ok()
-            },
+            |p| vault.note_exists(p.as_str()),
         );
         match target {
             frankmd_workspace::startup::StartupTarget::Note(path) => {
@@ -51,6 +47,40 @@ impl Shell {
 
     /// Open `path` and give the editor focus.
     pub(crate) fn open_note(&mut self, path: RelPath, window: &mut Window, cx: &mut Context<Self>) {
+        if frankmd_core::path::is_config_file(path.as_str()) {
+            let message = i18n::t(cx, "errors.failed_to_load");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        if !path.as_str().ends_with(frankmd_core::path::NOTE_EXT) {
+            let abs = self.vault_root.join(path.as_str());
+            if abs.is_file() {
+                self.open_attachments(Some(abs), window, cx);
+            } else {
+                let message = i18n::t(cx, "errors.not_a_note");
+                self.show_message(&message, true, cx);
+            }
+            return;
+        }
+        let locked = self
+            .core
+            .as_ref()
+            .and_then(|core| core.vault.note_encryption(path.as_str()).ok())
+            .is_some_and(|(_, locked)| locked);
+        if locked {
+            if self.active_path().is_some() {
+                self.dispatch(Command::CloseNote, window, cx);
+            }
+            self.locked_note = Some(path.as_str().to_owned());
+            if self.overlays.current().is_some() {
+                self.overlays.close();
+            }
+            self.focus_region(FocusRegion::Editor, window, cx);
+            self.update_title(window);
+            cx.notify();
+            return;
+        }
+        self.locked_note = None;
         self.dispatch(Command::OpenNote { path }, window, cx);
         if self.overlays.current().is_some() {
             self.overlays.close();
@@ -120,10 +150,12 @@ impl Shell {
     /// A note became active: explorer selection, history, MRU, backlinks.
     pub(crate) fn on_note_opened(&mut self, path: &str, cx: &mut Context<Self>) {
         use frankmd_workspace::explorer::{Item, ItemKind};
+        self.locked_note = None;
         self.reveal_in_tree(path);
         self.explorer.select_only(Item {
             path: path.to_owned(),
             kind: ItemKind::File,
+            encrypted: false,
         });
         self.explorer.set_cursor(Some(path.to_owned()));
         if !self.navigating {

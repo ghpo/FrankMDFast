@@ -25,6 +25,10 @@ impl Shell {
                 self.quick_open.model.set_query("");
             }
             OverlayKind::Settings => self.settings.open(window, cx),
+            OverlayKind::Dialog("unlock") => {
+                self.unlock_input
+                    .update(cx, |input, cx| input.focus(window, cx));
+            }
             OverlayKind::Help | OverlayKind::Dialog(_) | OverlayKind::SearchInFiles => {
                 self.overlay_focus.focus(window, cx)
             }
@@ -43,6 +47,12 @@ impl Shell {
             }
             Some(OverlayKind::Dialog(super::file_dialogs::MOVE)) => self.files.move_form = None,
             Some(OverlayKind::Dialog(super::file_dialogs::DELETE)) => self.files.delete = None,
+            Some(OverlayKind::Dialog("unlock")) => {
+                self.unlock_error = None;
+                self.pending_attachment = None;
+                self.pending_encryption = None;
+            }
+            Some(OverlayKind::Dialog("attachments")) => self.attachments = None,
             _ => {}
         }
         if let Some(region) = self.overlays.close() {

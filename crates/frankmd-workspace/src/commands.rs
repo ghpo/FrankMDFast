@@ -239,6 +239,8 @@ pub const BUILTIN: &[CommandSpec] = &[
     )
     .aka(&["grep", "find in files"]),
     cmd("file.new_note", "File", "New note", &["ctrl-n"]),
+    cmd("file.encrypt", "File", "Encrypt note", &[]).aka(&["crypto", "cifrar"]),
+    cmd("file.decrypt", "File", "Decrypt note", &[]).aka(&["crypto", "decifrar"]),
     cmd("file.new_folder", "File", "New folder", &["ctrl-shift-n"]),
     cmd("file.save", "File", "Save", &["ctrl-s"]).needs(Note),
     cmd("file.close", "File", "Close note", &["ctrl-w"]).needs(Note),
@@ -290,6 +292,15 @@ pub const BUILTIN: &[CommandSpec] = &[
         "tailscale",
         "web",
     ]),
+    cmd(
+        "app.encryption_toggle",
+        "App",
+        "Lock or unlock encrypted content",
+        &[],
+    )
+    .aka(&["encryption", "lock", "unlock"]),
+    cmd("app.settings_encryption", "App", "Encryption settings", &[])
+        .aka(&["encrypt", "crypto", "senha", "password"]),
     cmd("focus.sidebar", "Focus", "Sidebar", &["ctrl-1"]),
     cmd("focus.editor", "Focus", "Editor", &["ctrl-2"]),
     cmd("focus.preview", "Focus", "Preview", &["ctrl-3"]),

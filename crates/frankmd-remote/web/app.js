@@ -52,12 +52,52 @@
       location.href = "/login";
       throw new Error("unauthorized");
     }
+    if (
+      res.status === 423 &&
+      !path.startsWith("/api/encryption") &&
+      !options.__retried
+    ) {
+      const data = await res.json().catch(() => ({}));
+      if (data.code === "locked" && (await unlockEncryption())) {
+        return api(path, { ...options, __retried: true });
+      }
+      throw new Error(data.error || "Encrypted content is locked");
+    }
     if (res.status === 204) return null;
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
     if (!res.ok) throw new Error((data && data.error) || res.statusText);
     return data;
+  }
+
+  async function unlockEncryption() {
+    const password = window.prompt("Senha da criptografia");
+    if (!password) return false;
+    const res = await fetch("/api/encryption/unlock", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-FrankMD-CSRF": "1",
+      },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) {
+      toast("Senha incorreta", "error");
+      return false;
+    }
+    toast("Criptografia destravada");
+    return true;
+  }
+
+  async function lockEncryption() {
+    await fetch("/api/encryption/lock", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-FrankMD-CSRF": "1" },
+    });
+    location.reload();
   }
 
   async function upload(path, form) {
@@ -838,6 +878,7 @@
     $("#btn-theme").addEventListener("click", cycleTheme);
     $("#btn-settings").addEventListener("click", openSettings);
     $("#btn-library").addEventListener("click", openLibrary);
+    $("#btn-lock-crypto").addEventListener("click", lockEncryption);
     $("#btn-logout").addEventListener("click", async () => {
       await fetch("/logout", {
         method: "POST",

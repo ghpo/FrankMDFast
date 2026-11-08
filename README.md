@@ -26,6 +26,23 @@
 |---|---|---|
 | ![Command palette](docs/screenshots/palette.png) | ![Settings](docs/screenshots/settings.png) | ![Catppuccin Latte theme](docs/screenshots/light.png) |
 
+## Encryption at rest
+
+Encrypt **selected notes and media** with one vault password
+(Argon2id + XChaCha20-Poly1305). Filenames stay visible; content is sealed.
+Create/unlock/lock and back up the seal in **Settings › Encryption**; right-click
+a note to **Encrypt/Decrypt**, and use the media library for files. The paperclip
+in the preview header lists every local attachment of the note (images, video,
+audio, PDFs, archives) with **Save as…** and **Save all…**. See
+[docs/encryption.md](docs/encryption.md) for the format, key backup, password
+rotation and limits.
+
+<p align="center">
+  <img src="docs/screenshots/encryption-settings.png" width="32%" alt="Settings › Encryption with the vault locked, unlock field, seal backup and import controls">
+  <img src="docs/screenshots/encryption-locked-note.png" width="32%" alt="A locked encrypted note showing the padlock view in the editor and preview">
+  <img src="docs/screenshots/encryption-unlock.png" width="32%" alt="Quick unlock dialog for encrypted content">
+</p>
+
 ## Remote access (Tailscale) — start it from Settings
 
 <p align="center">

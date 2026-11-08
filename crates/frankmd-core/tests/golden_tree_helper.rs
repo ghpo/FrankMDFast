@@ -113,6 +113,7 @@ fn parse_rows(html: &str) -> Vec<TreeRow> {
                         .is_some_and(|a| a.contains("contextmenu")),
                     visible,
                     mtime: attr(tag, "data-mtime").map(|m| m.parse().unwrap()),
+                    encrypted: false,
                 });
             }
         } else if tag.starts_with("<svg") && has_class(tag, "tree-chevron") {

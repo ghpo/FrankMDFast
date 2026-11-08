@@ -17,7 +17,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let has_note = self.active_path().is_some();
+        let has_note = self.current_path().is_some();
         let focused = self.editor.focus_handle(cx).contains_focused(window, cx);
         v_flex()
             .id("editor-pane")
@@ -68,7 +68,9 @@ impl Shell {
             .child(self.render_banners(theme, cx))
             .children(self.render_grammar_banner(theme, cx))
             .children(self.render_rename_error(theme, cx))
-            .child(if has_note {
+            .child(if let Some(path) = self.locked_note.clone() {
+                self.render_locked_panel("locked-note", &path, theme, cx)
+            } else if has_note {
                 div()
                     .flex_1()
                     .min_h_0()
@@ -85,7 +87,7 @@ impl Shell {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let path = self.active_path().unwrap_or_default();
+        let path = self.current_path().unwrap_or_default();
         let mut parts: Vec<&str> = path.split('/').collect();
         let title = parts
             .pop()

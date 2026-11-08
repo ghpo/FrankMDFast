@@ -149,7 +149,23 @@ impl Shell {
                         "shell.help",
                         "help.toggle",
                         cx,
-                    )),
+                    ))
+                    .child({
+                        let (icon, tooltip) = if self.encryption.seal().is_none() {
+                            ("lock", "shell.encryption_create")
+                        } else if self.encryption.is_unlocked() {
+                            ("lock-open", "shell.encryption_lock")
+                        } else {
+                            ("lock", "shell.encryption_unlock")
+                        };
+                        self.dock_button(
+                            "dock-encryption",
+                            icon,
+                            tooltip,
+                            "app.encryption_toggle",
+                            cx,
+                        )
+                    }),
             )
     }
 

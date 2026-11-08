@@ -36,6 +36,7 @@ use super::editor_host::EditorHost;
 use super::i18n;
 use super::palette::PaletteState;
 use super::settings::SettingsState;
+use gpui_kit::component::input::InputEvent as InputComponentEvent;
 
 /// Everything a shell needs to open a vault. Tests build it over a temp dir.
 #[derive(Debug, Clone)]
@@ -66,6 +67,8 @@ pub struct ShellConfig {
     pub global_config: Option<PathBuf>,
     /// App-wide preferences file (UI scale); `None` keeps them in memory.
     pub app_prefs: Option<PathBuf>,
+    /// Note/media encryption session (locked until Settings unlocks it).
+    pub encryption: Option<Arc<frankmd_crypto::Session>>,
 }
 
 /// `Box<dyn Clock>` over a shared clock (the workspace takes ownership of its clock).
@@ -88,12 +91,16 @@ pub(crate) struct Core {
 }
 
 impl Core {
-    fn open(config: &ShellConfig) -> anyhow::Result<Self> {
+    fn open(
+        config: &ShellConfig,
+        encryption: std::sync::Arc<frankmd_crypto::Session>,
+    ) -> anyhow::Result<Self> {
         crate::app_fs::ensure_private_dir(&config.state_dir)?;
         let mut vault = Vault::open(&config.vault_root, &config.state_dir)?;
         if let Some(dir) = &config.trash_dir {
             vault = vault.with_trash(frankmd_fs::TrashBackend::Directory(dir.clone()));
         }
+        vault.set_encryption(Some(encryption));
         let mut store = ConfigStore::open(vault.clone(), config.env.clone());
         if let Some(path) = &config.global_config {
             store = store.with_global(path.clone());
@@ -134,6 +141,8 @@ pub struct Shell {
     pub(crate) state_dir: PathBuf,
     /// App config directory (systemd user unit).
     pub(crate) config_dir: PathBuf,
+    /// Note/media encryption session.
+    pub(crate) encryption: Arc<frankmd_crypto::Session>,
     /// Global settings file (Settings scope "All vaults").
     pub(crate) global_config: Option<PathBuf>,
     pub(crate) core: Option<Core>,
@@ -175,6 +184,20 @@ pub struct Shell {
     pub(crate) palette: PaletteState,
     pub(crate) quick_open: QuickOpenState,
     pub(crate) settings: SettingsState,
+    /// Local attachments of the current note (paperclip dialog).
+    pub(crate) attachments: Option<super::attachments::AttachmentsState>,
+    /// An encrypted attachment waiting for the vault unlock.
+    pub(crate) pending_attachment: Option<super::attachments::PendingAttachmentAction>,
+    /// Background attachment save tasks kept alive by the shell.
+    pub(crate) attachment_jobs: Vec<Task<()>>,
+    /// Open note is encrypted and the vault key is locked: show the lock view.
+    pub(crate) locked_note: Option<String>,
+    /// Encrypt/Decrypt action waiting for the unlock dialog.
+    pub(crate) pending_encryption: Option<(String, bool)>,
+    /// Password input of the quick unlock dialog.
+    pub(crate) unlock_input: Entity<InputState>,
+    /// Wrong-password message of the quick unlock dialog.
+    pub(crate) unlock_error: Option<SharedString>,
     pub(crate) help_tab: HelpTab,
     pub(crate) recovery: Option<super::recovery::RecoveryState>,
     pub(crate) theme: ResolvedTheme,
@@ -204,7 +227,11 @@ impl Shell {
                 |n| n.to_string_lossy().into_owned(),
             )
             .into();
-        let (core, startup_error) = match Core::open(&config) {
+        let encryption = config
+            .encryption
+            .clone()
+            .unwrap_or_else(|| Arc::new(frankmd_crypto::Session::new()));
+        let (core, startup_error) = match Core::open(&config, Arc::clone(&encryption)) {
             Ok(core) => (Some(core), None),
             Err(err) => {
                 tracing::error!(%err, "vault unavailable");
@@ -225,6 +252,16 @@ impl Shell {
         });
         let (palette, palette_sub) = PaletteState::new(window, cx);
         let (settings, settings_sub) = SettingsState::new(window, cx);
+        let unlock_input = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let unlock_sub = cx.subscribe_in(
+            &unlock_input,
+            window,
+            |this, _input, ev: &InputComponentEvent, window, cx| {
+                if matches!(ev, InputComponentEvent::PressEnter { .. }) {
+                    this.submit_unlock(window, cx);
+                }
+            },
+        );
         let (search, search_subs) = super::search::SearchState::new(window, cx);
         let (files, files_subs) = super::file_dialogs::FileDialogs::new(window, cx);
         let ui_state = if core.is_some() {
@@ -242,6 +279,7 @@ impl Shell {
             vault_root: config.vault_root.clone(),
             state_dir: config.state_dir.clone(),
             env: config.env.clone(),
+            encryption: Arc::clone(&encryption),
         });
         let (media, media_subs) = super::media_host::MediaHost::new(media_ctx, window, cx);
         let preview = cx.new(|cx| crate::preview::PreviewPane::new(window, cx));
@@ -253,6 +291,7 @@ impl Shell {
             vault_name,
             state_dir: config.state_dir.clone(),
             config_dir: config.config_dir.clone(),
+            encryption,
             global_config: config.global_config.clone(),
             core,
             startup_error,
@@ -292,6 +331,13 @@ impl Shell {
                 input: qo_input,
             },
             settings,
+            attachments: None,
+            pending_attachment: None,
+            attachment_jobs: Vec::new(),
+            locked_note: None,
+            pending_encryption: None,
+            unlock_input,
+            unlock_error: None,
             help_tab: HelpTab::default(),
             recovery: None,
             theme: appearance::resolve_id(
@@ -310,12 +356,19 @@ impl Shell {
             watchers: None,
             last_region: FocusRegion::Editor,
             window: window.window_handle(),
-            _subscriptions: [editor_sub, qo_sub, palette_sub, settings_sub, preview_sub]
-                .into_iter()
-                .chain(search_subs)
-                .chain(files_subs)
-                .chain(media_subs)
-                .collect(),
+            _subscriptions: [
+                editor_sub,
+                qo_sub,
+                palette_sub,
+                settings_sub,
+                unlock_sub,
+                preview_sub,
+            ]
+            .into_iter()
+            .chain(search_subs)
+            .chain(files_subs)
+            .chain(media_subs)
+            .collect(),
         };
         let requests = shell.subscribe_editor_requests(window, cx);
         shell._subscriptions.push(requests);
@@ -714,6 +767,9 @@ impl Shell {
                     self.open_path(&rel, window, cx);
                 }
             }
+            PreviewEvent::OpenAttachment { path } => {
+                self.open_attachments(Some(path.clone()), window, cx);
+            }
             PreviewEvent::ZoomChanged(zoom) => {
                 self.update_settings(
                     vec![(Key::PreviewZoom, Some(Value::Int(i128::from(*zoom))))],
@@ -867,8 +923,8 @@ impl Shell {
             .map(|d| d.path.as_str().to_owned())
     }
 
-    fn update_title(&self, window: &mut Window) {
-        let title = match self.active_path() {
+    pub(crate) fn update_title(&self, window: &mut Window) {
+        let title = match self.current_path() {
             Some(path) => {
                 let name = path
                     .rsplit('/')

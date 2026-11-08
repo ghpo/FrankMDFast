@@ -21,6 +21,8 @@ pub struct Item {
     pub path: String,
     /// File or folder.
     pub kind: ItemKind,
+    /// File is stored in a FrankMDFast encryption envelope.
+    pub encrypted: bool,
 }
 
 /// Modifier keys held during a click.
@@ -69,6 +71,10 @@ pub enum MenuItem {
     FindFile,
     /// Collapse every folder.
     CollapseAll,
+    /// Encrypt the selected note (per-note opt-in).
+    Encrypt,
+    /// Decrypt the selected note.
+    Decrypt,
 }
 
 /// An open context menu and its anchor point.
@@ -329,8 +335,15 @@ impl Explorer {
         match target {
             MenuTarget::Row(Item {
                 kind: ItemKind::File,
+                encrypted,
                 ..
-            }) => vec![Rename, MoveTo, Delete],
+            }) => {
+                if *encrypted {
+                    vec![Decrypt, Rename, MoveTo, Delete]
+                } else {
+                    vec![Encrypt, Rename, MoveTo, Delete]
+                }
+            }
             MenuTarget::Row(_) => vec![NewNote, NewFolder, Rename, MoveTo, Delete],
             MenuTarget::Background => vec![NewNote, NewFolder, SelectAll, FindFile, CollapseAll],
         }
@@ -354,6 +367,7 @@ impl Explorer {
                 Item {
                     path,
                     kind: ItemKind::Folder,
+                    ..
                 },
             ] => path.clone(),
             _ => String::new(),

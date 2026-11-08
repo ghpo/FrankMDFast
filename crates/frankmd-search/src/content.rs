@@ -232,6 +232,8 @@ pub struct Hit {
 /// Why a file was skipped (reported, never fatal — HP-028).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkipReason {
+    /// Note is encrypted; only name search applies.
+    Encrypted,
     /// Larger than [`MAX_SEARCH_FILE_BYTES`].
     TooLarge,
     /// Read/stat failed (EACCES, vanished between listing and read, ...).
@@ -456,6 +458,9 @@ impl Walk<'_> {
             Ok(bytes) => bytes,
             Err(e) => return self.skip(path, SkipReason::Io(e.to_string())),
         };
+        if frankmd_crypto::is_note_encrypted(&bytes) {
+            return self.skip(path, SkipReason::Encrypted);
+        }
         let lines = split_lines(&bytes);
         let remaining = self.query.max_results - self.results.hits.len();
         let (matches, capped) =

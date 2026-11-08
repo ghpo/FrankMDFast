@@ -18,7 +18,9 @@ impl Shell {
         let zoom_reset = this.clone();
         let zoom_in = this.clone();
         let sync = this.clone();
+        let attachments = this.clone();
         let zoom = self.preview.read(cx).zoom();
+        let attachment_count = self.preview.read(cx).attachments().len();
         let sync_on = self.scroll_sync;
         let preview_width = self.preview_ratio() * self.panes_width();
         v_flex()
@@ -47,6 +49,24 @@ impl Shell {
                             .child(i18n::t(cx, "preview.title")),
                     )
                     .child(div().flex_1())
+                    .when(attachment_count > 0, |el| {
+                        el.child(
+                            Button::new("preview-attachments")
+                                .ghost()
+                                .xsmall()
+                                .icon(crate::ui::icons::ph("paperclip"))
+                                .tooltip(i18n::t_args(
+                                    cx,
+                                    "preview.attachments_count",
+                                    &[("count", &attachment_count.to_string())],
+                                ))
+                                .on_click(move |_, window, cx| {
+                                    let _ = attachments.update(cx, |shell, cx| {
+                                        shell.open_attachments(None, window, cx)
+                                    });
+                                }),
+                        )
+                    })
                     .child(
                         Button::new("preview-zoom-out")
                             .ghost()
@@ -109,7 +129,15 @@ impl Shell {
                             }),
                     ),
             )
-            .child(div().flex_1().min_h_0().child(self.preview.clone()))
+            .child(if let Some(path) = self.locked_note.clone() {
+                self.render_locked_panel("locked-preview", &path, theme, cx)
+            } else {
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.preview.clone())
+                    .into_any_element()
+            })
     }
 
     pub(super) fn render_media_library(

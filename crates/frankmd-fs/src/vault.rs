@@ -38,6 +38,7 @@ pub struct Vault {
     /// Locks always live under `state_dir` (folder that is not a notes root).
     private_locks: bool,
     trash: TrashBackend,
+    encryption: Option<std::sync::Arc<frankmd_crypto::Session>>,
 }
 
 /// A path proven to be inside the vault (component-wise, symlink-aware).
@@ -71,6 +72,8 @@ pub struct NoteFile {
     /// `false` if the bytes were not valid UTF-8 (UI shows a warning and
     /// opens read-only rather than failing, HP-028).
     pub valid_utf8: bool,
+    /// The file is stored in a FrankMDFast encryption envelope.
+    pub encrypted: bool,
 }
 
 impl NoteFile {
@@ -82,6 +85,7 @@ impl NoteFile {
             revision,
             mtime,
             valid_utf8,
+            encrypted: false,
         }
     }
 }
@@ -101,6 +105,7 @@ impl Vault {
             state_dir: state_dir.into(),
             private_locks: false,
             trash: TrashBackend::default(),
+            encryption: None,
         })
     }
 
@@ -195,6 +200,88 @@ impl Vault {
     }
 
     /// Build the Explorer tree under a shared filesystem lock.
+    /// Install the vault's encryption session (notes/media cryptography).
+    pub fn set_encryption(&mut self, session: Option<std::sync::Arc<frankmd_crypto::Session>>) {
+        self.encryption = session;
+    }
+
+    /// The installed encryption session, if any.
+    pub fn encryption(&self) -> Option<&std::sync::Arc<frankmd_crypto::Session>> {
+        self.encryption.as_ref()
+    }
+
+    /// `(encrypted, locked)` for a note path (no full read).
+    pub fn note_encryption(&self, path: &str) -> Result<(bool, bool), FsError> {
+        let full = self.safe_path(path, true)?;
+        if !self.file_is_encrypted(&full.abs) {
+            return Ok((false, false));
+        }
+        let locked = self
+            .encryption
+            .as_ref()
+            .is_none_or(|session| !session.is_unlocked());
+        Ok((true, locked))
+    }
+
+    /// `true` when `path` resolves to an existing file inside the vault.
+    pub fn note_exists(&self, path: &str) -> bool {
+        self.safe_path(path, true)
+            .is_ok_and(|full| full.abs.is_file())
+    }
+
+    fn encrypt_note_bytes(&self, bytes: &[u8], label: &str) -> Result<Vec<u8>, FsError> {
+        let session = self.encryption.as_ref().ok_or_else(|| {
+            FsError::Locked(format!(
+                "Note is encrypted and no vault key is loaded: {label}"
+            ))
+        })?;
+        if !session.is_unlocked() {
+            return Err(FsError::Locked(format!(
+                "Note is encrypted and the vault is locked: {label}"
+            )));
+        }
+        session
+            .encrypt_note(bytes)
+            .map_err(|err| FsError::Crypto(err.to_string()))
+    }
+
+    fn file_is_encrypted(&self, abs: &Path) -> bool {
+        let Ok(mut file) = fs::File::open(abs) else {
+            return false;
+        };
+        use std::io::Read as _;
+        let mut prefix = [0u8; 40];
+        let n = file.read(&mut prefix).unwrap_or(0);
+        frankmd_crypto::is_note_encrypted(&prefix[..n])
+    }
+
+    fn file_encryption(&self, abs: &Path) -> (bool, bool) {
+        if !self.file_is_encrypted(abs) {
+            return (false, false);
+        }
+        let locked = self
+            .encryption
+            .as_ref()
+            .is_none_or(|session| !session.is_unlocked());
+        (true, locked)
+    }
+
+    pub(crate) fn write_note_with_encryption(
+        &self,
+        path: &ContainedPath,
+        plaintext: &[u8],
+        encrypt: bool,
+    ) -> Result<Revision, FsError> {
+        let bytes = if encrypt {
+            self.encrypt_note_bytes(plaintext, path.rel.as_str())?
+        } else {
+            plaintext.to_vec()
+        };
+        atomic::atomic_replace(&path.abs, &bytes, ModePolicy::Preserve)?;
+        Ok(Revision::of(&bytes))
+    }
+
+    /// The tree (folders first, then notes).
     pub fn list_tree(&self) -> Result<Vec<TreeNode>, FsError> {
         let _lock = self.lock(FILESYSTEM_LOCK, LockKind::Shared)?;
         self.build_tree(&self.real_root)
@@ -278,11 +365,14 @@ impl Vault {
                         .strip_suffix(frankmd_core::path::NOTE_EXT)
                         .unwrap_or(&entry.name)
                         .to_owned();
+                    let (encrypted, locked) = self.file_encryption(&abs);
                     nodes.push(TreeNode::File {
                         name,
                         path,
                         file_type: FileType::Markdown,
                         mtime: entry.mtime,
+                        encrypted,
+                        locked,
                     });
                 }
                 EntryKind::Symlink => {}
@@ -306,10 +396,32 @@ impl Vault {
         if !path.abs.is_file() {
             return Err(not_found());
         }
-        let bytes =
+        let raw =
             fs::read(&path.abs).map_err(|e| if is_gone(&e) { not_found() } else { e.into() })?;
         let mtime = fs::metadata(&path.abs).map_or(0, |m| crate::meta::mtime_secs(&m));
-        Ok(NoteFile::from_bytes(bytes, mtime))
+        if frankmd_crypto::is_note_encrypted(&raw) {
+            let session = self
+                .encryption
+                .as_ref()
+                .ok_or_else(|| FsError::Locked(format!("Note is encrypted and locked: {label}")))?;
+            if !session.is_unlocked() {
+                return Err(FsError::Locked(format!(
+                    "Note is encrypted and locked: {label}"
+                )));
+            }
+            let plain = session
+                .decrypt_note(&raw)
+                .map_err(|err| FsError::Crypto(err.to_string()))?;
+            let valid_utf8 = std::str::from_utf8(&plain).is_ok();
+            return Ok(NoteFile {
+                bytes: plain,
+                revision: Revision::of(&raw),
+                mtime,
+                valid_utf8,
+                encrypted: true,
+            });
+        }
+        Ok(NoteFile::from_bytes(raw, mtime))
     }
 
     /// Create a new note; `AlreadyExists` if anything is there. Creates parents.
@@ -354,8 +466,13 @@ impl Vault {
         bytes: &[u8],
     ) -> Result<Revision, FsError> {
         mkdir_parent(&path.abs)?;
-        atomic::atomic_replace(&path.abs, bytes, ModePolicy::Preserve)?;
-        Ok(Revision::of(bytes))
+        let stored = if self.file_is_encrypted(&path.abs) {
+            self.encrypt_note_bytes(bytes, path.rel.as_str())?
+        } else {
+            bytes.to_vec()
+        };
+        atomic::atomic_replace(&path.abs, &stored, ModePolicy::Preserve)?;
+        Ok(Revision::of(&stored))
     }
 
     /// Save over an **existing** note; `NotFound` if it is gone (never
@@ -375,8 +492,13 @@ impl Vault {
         if !path.abs.is_file() {
             return Err(FsError::NotFound(format!("Note not found: {label}")));
         }
-        atomic::atomic_replace(&path.abs, bytes, ModePolicy::Preserve)?;
-        Ok(Revision::of(bytes))
+        let stored = if self.file_is_encrypted(&path.abs) {
+            self.encrypt_note_bytes(bytes, label)?
+        } else {
+            bytes.to_vec()
+        };
+        atomic::atomic_replace(&path.abs, &stored, ModePolicy::Preserve)?;
+        Ok(Revision::of(&stored))
     }
 
     /// Rename/move a file or folder without clobbering.

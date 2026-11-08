@@ -6,12 +6,14 @@ fn file(p: &str) -> Item {
     Item {
         path: p.into(),
         kind: ItemKind::File,
+        encrypted: false,
     }
 }
 fn folder(p: &str) -> Item {
     Item {
         path: p.into(),
         kind: ItemKind::Folder,
+        encrypted: false,
     }
 }
 fn ctrl() -> Modifiers {
@@ -189,7 +191,13 @@ fn menu_items_per_target() {
     use MenuItem::*;
     assert_eq!(
         Explorer::menu_items(&MenuTarget::Row(file("a.md"))),
-        [Rename, MoveTo, Delete]
+        [Encrypt, Rename, MoveTo, Delete]
+    );
+    let mut encrypted = file("secret.md");
+    encrypted.encrypted = true;
+    assert_eq!(
+        Explorer::menu_items(&MenuTarget::Row(encrypted)),
+        [Decrypt, Rename, MoveTo, Delete]
     );
     assert_eq!(
         Explorer::menu_items(&MenuTarget::Row(folder("a"))),

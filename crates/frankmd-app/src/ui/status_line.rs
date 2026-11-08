@@ -135,6 +135,15 @@ impl Shell {
                         }),
                 )
             })
+            .when(self.locked_note.is_some(), |el| {
+                el.child(
+                    div()
+                        .id("status-encrypted")
+                        .test_support()
+                        .text_color(theme.warning)
+                        .child(i18n::t(cx, "settings_sheet.encryption.locked_tag")),
+                )
+            })
             .when(has_note, |el| {
                 el.child(div().id("status-position").child(format!("{line}:{col}")))
             })

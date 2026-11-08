@@ -2,6 +2,7 @@
 
 pub mod ai;
 pub mod config;
+pub mod encryption;
 pub mod events;
 pub mod media;
 pub mod notes;
@@ -83,4 +84,28 @@ pub fn folder_path(raw: &str) -> Result<String, ApiError> {
         ));
     }
     Ok(trimmed.to_owned())
+}
+
+/// Read a vault asset, decrypting a FrankMDFast media envelope when needed.
+/// A locked key maps to 423 so the web client can prompt for the password.
+pub fn read_maybe_encrypted(
+    state: &crate::state::ServerState,
+    path: &std::path::Path,
+) -> Result<Vec<u8>, ApiError> {
+    let bytes = std::fs::read(path)
+        .map_err(|err| ApiError::internal(format!("could not read file: {err}")))?;
+    if frankmd_crypto::is_media_encrypted(&bytes) {
+        if !state.encryption.is_unlocked() {
+            return Err(ApiError::new(
+                axum::http::StatusCode::LOCKED,
+                "locked",
+                "Encrypted content is locked; unlock in the web header.",
+            ));
+        }
+        return state
+            .encryption
+            .decrypt_media(&bytes)
+            .map_err(|err| ApiError::internal(err.to_string()));
+    }
+    Ok(bytes)
 }

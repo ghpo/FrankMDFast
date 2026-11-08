@@ -46,6 +46,8 @@ pub struct TreeRow {
     pub visible: bool,
     /// File rows: `data-mtime`, when known.
     pub mtime: Option<i64>,
+    /// File rows: stored in a FrankMDFast encryption envelope.
+    pub encrypted: bool,
 }
 
 /// Result of rendering a tree.
@@ -95,6 +97,7 @@ fn push_rows(
                     context_menu: true,
                     visible,
                     mtime: None,
+                    encrypted: false,
                 });
                 push_rows(
                     rows,
@@ -110,6 +113,8 @@ fn push_rows(
                 path,
                 file_type,
                 mtime,
+                encrypted,
+                ..
             } => {
                 let kind = file_row_kind(*file_type);
                 let movable = kind != RowKind::Config;
@@ -124,6 +129,7 @@ fn push_rows(
                     context_menu: movable,
                     visible,
                     mtime: Some(*mtime),
+                    encrypted: *encrypted,
                 });
             }
         }

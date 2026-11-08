@@ -153,8 +153,7 @@ pub async fn image_preview(
         .api
         .preview(raw.trim_matches('/'))
         .map_err(|e| media_error(&e))?;
-    let bytes = std::fs::read(&path)
-        .map_err(|e| ApiError::internal(format!("could not read image: {e}")))?;
+    let bytes = super::read_maybe_encrypted(&state, &path)?;
     let mime = mime_guess::from_path(&path)
         .first_or_octet_stream()
         .to_string();

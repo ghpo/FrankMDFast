@@ -543,6 +543,7 @@ impl Shell {
                 vec![Item {
                     path,
                     kind: ItemKind::File,
+                    encrypted: false,
                 }],
                 window,
                 cx,

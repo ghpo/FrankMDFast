@@ -62,8 +62,22 @@ pub enum PreviewEvent {
         /// Absolute path.
         path: PathBuf,
     },
+    /// A local attachment link was clicked (absolute, inside the vault).
+    OpenAttachment {
+        /// Absolute path.
+        path: PathBuf,
+    },
     /// Zoom changed from inside the pane (header buttons, keys).
     ZoomChanged(u16),
+}
+
+/// One local file referenced by the note (link, image, video/audio source, …).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentLink {
+    /// Absolute path inside the vault.
+    pub path: PathBuf,
+    /// Destination as written in the note.
+    pub href: String,
 }
 
 /// How long the "Copied" feedback of a code block's copy button stays.
@@ -98,7 +112,31 @@ pub struct PreviewPane {
     copied_task: Option<Task<()>>,
     pending_line: Option<u32>,
     last_reported_line: Option<u32>,
+    attachments: Vec<AttachmentLink>,
     highlighter: Arc<dyn CodeHighlighter>,
+}
+
+/// Every non-note local file referenced by `source`: Markdown links and
+/// images, reference definitions/uses, and HTML media `src` attributes.
+/// The media-usage scanner already masks code and comments for us.
+fn attachments_in(source: &str, cx: &links::Context) -> Vec<AttachmentLink> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for href in frankmd_media::usage::references_in(source) {
+        let LinkTarget::Attachment(path) = links::classify_link(&href, cx) else {
+            continue;
+        };
+        if path.file_name().is_some_and(|name| name == ".fed") {
+            continue;
+        }
+        if !path.is_file() {
+            continue;
+        }
+        if seen.insert(path.clone()) {
+            out.push(AttachmentLink { path, href });
+        }
+    }
+    out
 }
 
 impl EventEmitter<PreviewEvent> for PreviewPane {}
@@ -149,6 +187,7 @@ impl PreviewPane {
             copied_task: None,
             pending_line: None,
             last_reported_line: None,
+            attachments: Vec::new(),
             highlighter: Arc::new(BuiltinHighlighter),
         }
     }
@@ -205,6 +244,7 @@ impl PreviewPane {
         self.generation += 1;
         self.render_task = None;
         self.source = Arc::from("");
+        self.attachments.clear();
         self.install(RenderDoc::default(), Layout::default(), self.generation, cx);
     }
 
@@ -215,6 +255,7 @@ impl PreviewPane {
         let new_count = layout.items.len();
         self.doc = Arc::new(doc);
         self.layout = Arc::new(layout);
+        self.attachments = attachments_in(&self.source, &self.link_cx);
         self.rendered_generation = generation;
         // Viewer and focus slots refer to images by ordinal; keep them valid.
         if self.image_focus.len() > self.layout.images.len() {
@@ -242,7 +283,13 @@ impl PreviewPane {
     /// Set the vault root (containment boundary for images and note links).
     pub fn set_vault_root(&mut self, root: Option<PathBuf>, cx: &mut Context<Self>) {
         self.link_cx.vault_root = root;
+        self.attachments = attachments_in(&self.source, &self.link_cx);
         cx.notify();
+    }
+
+    /// Local files referenced by the rendered note, in document order.
+    pub fn attachments(&self) -> &[AttachmentLink] {
+        &self.attachments
     }
 
     /// Apply theme tokens (Omarchy / built-in / custom).
@@ -401,6 +448,7 @@ impl PreviewPane {
                 LinkTarget::External(url) => cx.open_url(&url),
                 LinkTarget::Anchor(anchor) => self.scroll_to_anchor(&anchor, cx),
                 LinkTarget::Note(path) => cx.emit(PreviewEvent::OpenNote { path }),
+                LinkTarget::Attachment(path) => cx.emit(PreviewEvent::OpenAttachment { path }),
                 LinkTarget::Blocked => tracing::debug!("preview: link not followed"),
             },
         }
@@ -537,3 +585,57 @@ impl PreviewPane {
 }
 
 use style::Metrics;
+
+#[allow(clippy::disallowed_methods)]
+#[cfg(test)]
+mod attachment_tests {
+    use std::path::{Path, PathBuf};
+
+    fn context(dir: &Path) -> super::links::Context {
+        super::links::Context {
+            base_dir: Some(dir.join("notes")),
+            vault_root: Some(dir.to_path_buf()),
+        }
+    }
+
+    #[test]
+    fn collects_images_media_links_and_references_once() {
+        let dir = std::env::temp_dir().join(format!(
+            "frankmd-preview-attachments-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("notes")).expect("notes dir");
+        std::fs::create_dir_all(dir.join("images")).expect("images dir");
+        std::fs::create_dir_all(dir.join("videos")).expect("videos dir");
+        std::fs::create_dir_all(dir.join("docs")).expect("docs dir");
+        std::fs::write(dir.join("images/pic.png"), b"png").expect("image");
+        std::fs::write(dir.join("images/talk.m4a"), b"m4a").expect("audio");
+        std::fs::write(dir.join("videos/clip.mp4"), b"mp4").expect("video");
+        std::fs::write(dir.join("docs/readme.pdf"), b"pdf").expect("pdf");
+        let source = concat!(
+            "![pic](../images/pic.png)\n",
+            "[audio](../images/talk.m4a)\n",
+            "<video controls><source src=\"../videos/clip.mp4\"></video>\n",
+            "[pdf](../docs/readme.pdf)\n",
+            "[again](../images/talk.m4a)\n",
+            "[note](other.md)\n",
+            "`[code](../images/pic.png)`\n",
+        );
+        let mut paths: Vec<PathBuf> = super::attachments_in(source, &context(&dir))
+            .into_iter()
+            .map(|attachment| attachment.path)
+            .collect();
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                dir.join("docs/readme.pdf"),
+                dir.join("images/pic.png"),
+                dir.join("images/talk.m4a"),
+                dir.join("videos/clip.mp4"),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

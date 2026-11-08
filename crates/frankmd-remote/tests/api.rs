@@ -551,3 +551,120 @@ async fn unknown_api_is_json_404_and_spa_falls_back_to_index() {
             .starts_with("text/html")
     );
 }
+
+#[allow(clippy::disallowed_methods)] // test fixtures create the seal/media files
+#[tokio::test]
+async fn encrypted_notes_and_media_lock_unlock() {
+    use frankmd_crypto::{SealFile, encrypt_media_with, encrypt_note_with};
+    use frankmd_fs::atomic::{ModePolicy, atomic_replace};
+
+    let app = app();
+    let password = "uma senha longa e unica para o teste";
+    let (seal, key) = SealFile::create(password).unwrap();
+    let state_dir = app.dir.path().join("state");
+    let vault = app.dir.path().join("notes");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::create_dir_all(vault.join("images")).unwrap();
+    atomic_replace(
+        &state_dir.join("encryption.json"),
+        seal.encode().as_bytes(),
+        ModePolicy::Fixed(0o600),
+    )
+    .unwrap();
+    atomic_replace(
+        &vault.join("secret.md"),
+        &encrypt_note_with(&key, b"conteudo secreto").unwrap(),
+        ModePolicy::Preserve,
+    )
+    .unwrap();
+    atomic_replace(
+        &vault.join("images/pic.png"),
+        &encrypt_media_with(&key, b"PNGDATA").unwrap(),
+        ModePolicy::Preserve,
+    )
+    .unwrap();
+
+    let (status, _, conf) = call(
+        &app.router,
+        Method::GET,
+        "/api/encryption",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(conf["configured"], true);
+    assert_eq!(conf["unlocked"], false);
+
+    let (status, _, _) = call(
+        &app.router,
+        Method::GET,
+        "/api/note?path=secret.md",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::LOCKED);
+
+    let (status, _, _) = call(
+        &app.router,
+        Method::GET,
+        "/api/asset/images/pic.png",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::LOCKED);
+
+    let (status, _, _) = call(
+        &app.router,
+        Method::POST,
+        "/api/encryption/unlock",
+        Some(json!({"password": password})),
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _, note) = call(
+        &app.router,
+        Method::GET,
+        "/api/note?path=secret.md",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(note["content"], "conteudo secreto");
+    assert_eq!(note["encrypted"], true);
+
+    let (status, _, asset) = call(
+        &app.router,
+        Method::GET,
+        "/api/asset/images/pic.png",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(asset, Value::String("PNGDATA".to_owned()));
+
+    let (status, _, _) = call(
+        &app.router,
+        Method::POST,
+        "/api/encryption/lock",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, _) = call(
+        &app.router,
+        Method::GET,
+        "/api/note?path=secret.md",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::LOCKED);
+}

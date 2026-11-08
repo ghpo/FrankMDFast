@@ -10,6 +10,7 @@ pub mod bridge;
 pub mod cli;
 pub mod dialogs;
 pub mod editor;
+pub mod encryption;
 pub mod preview;
 pub mod remote;
 pub mod scale;
@@ -231,9 +232,12 @@ impl LaunchContext {
             .vault_root
             .canonicalize()
             .unwrap_or_else(|_| launch.vault_root.clone());
+        let state_dir = self.dirs.vault_state(&real);
+        let encryption = crate::encryption::load_session(&state_dir);
         let config = ui::ShellConfig {
-            state_dir: self.dirs.vault_state(&real),
+            state_dir,
             config_dir: self.dirs.config.clone(),
+            encryption: Some(encryption),
             vault_root: launch.vault_root,
             env: self.env.clone(),
             open: launch.open,

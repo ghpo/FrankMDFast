@@ -44,6 +44,12 @@ pub enum TreeNode {
         /// Modification time, whole epoch seconds (truncated).
         #[serde(default)]
         mtime: i64,
+        /// Stored in a FrankMDFast encryption envelope.
+        #[serde(default, skip_serializing_if = "is_false")]
+        encrypted: bool,
+        /// Encrypted and the vault key is not in memory.
+        #[serde(default, skip_serializing_if = "is_false")]
+        locked: bool,
     },
 }
 
@@ -129,4 +135,9 @@ fn collect_files<'a>(nodes: &'a [TreeNode], out: &mut Vec<&'a TreeNode>) {
             TreeNode::Folder { children, .. } => collect_files(children, out),
         }
     }
+}
+
+/// `skip_serializing_if` helper: keep the compat JSON free of false flags.
+fn is_false(value: &bool) -> bool {
+    !*value
 }

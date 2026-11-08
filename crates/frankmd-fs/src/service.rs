@@ -88,6 +88,19 @@ impl<'a> NotesService<'a> {
         self.vault.create_note_locked(&full, bytes, path)
     }
 
+    /// Encrypt or decrypt one note in place (atomic; requires an unlocked key
+    /// when either side is encrypted).
+    pub fn set_encrypted(&self, path: &str, encrypted: bool) -> Result<Revision, FsError> {
+        let _lock = self.exclusive()?;
+        let full = self.vault.safe_path(path, true)?;
+        let note = self.vault.read_note_as(&full, path)?;
+        if note.encrypted == encrypted {
+            return Ok(note.revision);
+        }
+        self.vault
+            .write_note_with_encryption(&full, &note.bytes, encrypted)
+    }
+
     /// `update(path, content)`: the file must exist (`NotFound`); parents are
     /// never created (HP-006).
     pub fn update(&self, path: &str, bytes: &[u8]) -> Result<Revision, FsError> {
@@ -266,6 +279,9 @@ impl<'a> NotesService<'a> {
                 continue;
             }
             let bytes = fs::read(&file)?;
+            if frankmd_crypto::is_note_encrypted(&bytes) {
+                continue;
+            }
             let content = String::from_utf8(bytes).map_err(|_| {
                 FsError::Io(io::Error::new(
                     io::ErrorKind::InvalidData,

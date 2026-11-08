@@ -23,6 +23,8 @@ pub struct MediaContext {
     pub state_dir: PathBuf,
     /// The process environment snapshot (config resolution).
     pub env: EnvSnapshot,
+    /// Note/media encryption session.
+    pub encryption: Arc<frankmd_crypto::Session>,
 }
 
 /// `.fed` as the media layer's [`SettingsStore`]: every `current()` re-reads
@@ -86,6 +88,8 @@ pub struct MediaServices {
     pub http: frankmd_net::TrustedClient,
     /// Usage index (cached by fingerprint).
     pub usage: frankmd_media::usage::MediaUsage,
+    /// Note/media encryption session.
+    pub encryption: Arc<frankmd_crypto::Session>,
 }
 
 impl std::fmt::Debug for MediaServices {
@@ -115,6 +119,7 @@ impl MediaServices {
             youtube,
             http,
             usage,
+            encryption: Arc::clone(&ctx.encryption),
         }))
     }
 

@@ -164,6 +164,15 @@ impl<B: DraftBackend> Workspace<B> {
         &self.autosave
     }
 
+    /// The open note was encrypted/decrypted: skip plaintext drafts and drop
+    /// the old draft when it becomes encrypted.
+    pub fn set_open_encrypted(&mut self, encrypted: bool) {
+        self.autosave.set_encrypted(encrypted);
+        if encrypted && let Some(doc) = self.autosave.current_doc() {
+            let _ = self.autosave.drafts_mut().remove_draft(&draft_subject(doc));
+        }
+    }
+
     /// The open document.
     pub fn open_doc(&self) -> Option<&OpenDoc> {
         self.open.as_ref()
@@ -360,6 +369,10 @@ impl<B: DraftBackend> Workspace<B> {
             out.error(UserError::new("errors.failed_to_load"));
             return;
         }
+        if !path.as_str().ends_with(frankmd_core::path::NOTE_EXT) {
+            out.error(UserError::new("errors.not_a_note"));
+            return;
+        }
         if self.open.as_ref().is_some_and(|o| &o.path == path) {
             return;
         }
@@ -375,6 +388,7 @@ impl<B: DraftBackend> Workspace<B> {
             }
         };
         let text = String::from_utf8_lossy(&file.bytes).into_owned();
+        self.autosave.set_encrypted(file.encrypted);
         let doc = self.registry.id_for(path);
         if let Some(previous) = self.index.record(path.as_str(), doc) {
             // Same note as in an earlier run: its drafts follow it to this run's id.
@@ -428,6 +442,7 @@ impl<B: DraftBackend> Workspace<B> {
             out.error(UserError::new(DRAFT_STORAGE_ERROR));
             return;
         }
+        self.autosave.set_encrypted(false);
         self.autosave.clear_file();
         self.open = None;
         out.events.push(Event::DocClosed { doc });
@@ -751,11 +766,15 @@ impl<B: DraftBackend> Workspace<B> {
         match NotesService::new(&self.vault).read(open.path.as_str()) {
             Err(FsError::NotFound(_)) => out.events.push(Event::DocDeletedOnDisk { doc: open.id }),
             Err(_) => {}
-            Ok(file) if file.revision == open.disk_revision => {}
-            Ok(_) if self.autosave.has_unsaved_changes() => {
+            Ok(file) if file.revision == open.disk_revision => {
+                self.autosave.set_encrypted(file.encrypted);
+            }
+            Ok(file) if self.autosave.has_unsaved_changes() => {
+                self.autosave.set_encrypted(file.encrypted);
                 out.events.push(Event::DocConflict { doc: open.id })
             }
             Ok(file) => {
+                self.autosave.set_encrypted(file.encrypted);
                 let text = String::from_utf8_lossy(&file.bytes).into_owned();
                 self.autosave.set_editor_text(&text);
                 self.autosave

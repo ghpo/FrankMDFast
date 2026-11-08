@@ -32,6 +32,8 @@ mod tests {
             "link",
             "arrow-up",
             "arrow-down",
+            "lock",
+            "lock-open",
         ] {
             assert!(frankmd_core::emoji::icons::lookup(name).is_some(), "{name}");
         }

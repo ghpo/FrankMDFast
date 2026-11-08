@@ -67,6 +67,8 @@ pub struct Shell {
     pub view: Entity<AppShell>,
     /// Vault root on disk.
     pub root: std::path::PathBuf,
+    /// Per-vault app state directory (drafts, seal).
+    pub state_dir: std::path::PathBuf,
     _vault_dir: tempfile::TempDir,
     _state_dir: tempfile::TempDir,
 }
@@ -115,6 +117,7 @@ pub fn open_shell(cx: &mut TestAppContext, size: Size<Pixels>, fixture: VaultFix
         trash_dir: Some(state_dir.path().join("trash")),
         global_config: Some(state_dir.path().join("global").join("config.toml")),
         app_prefs: None,
+        encryption: None,
     };
     let (window, view) = super::harness::open_window(cx, size, move |window, cx| {
         cx.new(|cx| AppShell::new(config, window, cx))
@@ -126,6 +129,7 @@ pub fn open_shell(cx: &mut TestAppContext, size: Size<Pixels>, fixture: VaultFix
         window,
         view,
         root,
+        state_dir: state_dir.path().join("vault"),
         _vault_dir: vault_dir,
         _state_dir: state_dir,
     }

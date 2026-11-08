@@ -136,6 +136,10 @@ pub struct ServerState {
     pub media: MediaStack,
     /// Token verifier and login throttle.
     pub auth: AuthConfig,
+    /// Note/media encryption key session (locked until the web unlock).
+    pub encryption: std::sync::Arc<frankmd_crypto::Session>,
+    /// Per-vault app state directory (seal path, remote status).
+    pub state_dir: PathBuf,
     /// Live change notifications.
     pub events: broadcast::Sender<RemoteEvent>,
     /// UI locale override.
@@ -163,6 +167,16 @@ impl ServerState {
         if let Some(dir) = &config.trash_dir {
             vault = vault.with_trash(frankmd_fs::TrashBackend::Directory(dir.clone()));
         }
+        let seal_path = config.state_dir.join("encryption.json");
+        let seal = std::fs::read(&seal_path)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .and_then(|text| frankmd_crypto::SealFile::decode(&text).ok());
+        let encryption = Arc::new(match seal {
+            Some(seal) => frankmd_crypto::Session::with_seal(seal),
+            None => frankmd_crypto::Session::new(),
+        });
+        vault.set_encryption(Some(Arc::clone(&encryption)));
         let settings = Arc::new(FedSettings::new(vault.clone(), config.env.clone()));
         let media = MediaStack::new(&vault, Arc::clone(&settings))?;
         let auth = AuthConfig::new(&config.token)?;
@@ -172,6 +186,8 @@ impl ServerState {
             settings,
             media,
             auth,
+            encryption,
+            state_dir: config.state_dir.clone(),
             events,
             locale: config.locale.clone(),
             home: config.env.raw("HOME").map(PathBuf::from),

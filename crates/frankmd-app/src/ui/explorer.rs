@@ -78,6 +78,7 @@ fn item_of(row: &TreeRow) -> Item {
         } else {
             ItemKind::File
         },
+        encrypted: row.encrypted,
     }
 }
 
@@ -104,7 +105,7 @@ impl Shell {
             .as_ref()
             .map(|c| c.ws.snapshot().tree)
             .unwrap_or_default();
-        let active = self.active_path().unwrap_or_default();
+        let active = self.current_path().unwrap_or_default();
         match tree_rows(&tree, self.explorer.expanded(), &active) {
             TreeView::Rows(rows) => rows.into_iter().filter(|r| r.visible).collect(),
             TreeView::Empty => Vec::new(),
@@ -144,7 +145,7 @@ impl Shell {
             .as_ref()
             .map(|c| c.ws.snapshot().tree)
             .unwrap_or_default();
-        let active = self.active_path().unwrap_or_default();
+        let active = self.current_path().unwrap_or_default();
         let view = tree_rows(&tree, self.explorer.expanded(), &active);
         let this = cx.entity().downgrade();
         let cursor = self.explorer.cursor().map(str::to_owned);
@@ -329,6 +330,19 @@ impl Shell {
                     .text_color(theme.muted_foreground)
                     .child(glyph),
             )
+            .when(row.encrypted, |el| {
+                let (icon, color) = if self.encryption.is_unlocked() {
+                    ("lock-open", theme.success)
+                } else {
+                    ("lock", theme.warning)
+                };
+                el.child(
+                    div()
+                        .id(SharedString::from(format!("explorer-lock-{}", row.path)))
+                        .test_support()
+                        .child(crate::ui::icons::ph(icon).xsmall().text_color(color)),
+                )
+            })
             .child(label);
         if editing {
             return el.into_any_element();
@@ -720,6 +734,8 @@ impl Shell {
                 MenuItem::SelectAll => ("select-all", "context_menu.select_all"),
                 MenuItem::FindFile => ("find-file", "context_menu.find_file"),
                 MenuItem::CollapseAll => ("collapse-all", "context_menu.collapse_all"),
+                MenuItem::Encrypt => ("encrypt", "context_menu.encrypt"),
+                MenuItem::Decrypt => ("decrypt", "context_menu.decrypt"),
             };
             let this = this.clone();
             let target = menu.target.clone();
@@ -802,6 +818,12 @@ impl Shell {
                 self.start_inline_rename(RenameTarget::Row, &row.path, row.kind, window, cx)
             }
             (MenuItem::MoveTo, Some(row)) => self.open_move(&row.path, row.kind, window, cx),
+            (MenuItem::Encrypt, Some(row)) if row.kind == ItemKind::File => {
+                self.request_note_encryption(&row.path, true, window, cx)
+            }
+            (MenuItem::Decrypt, Some(row)) if row.kind == ItemKind::File => {
+                self.request_note_encryption(&row.path, false, window, cx)
+            }
             (MenuItem::Delete, Some(row)) => {
                 let targets = self.explorer.context_targets(&row);
                 self.open_delete(targets, window, cx);

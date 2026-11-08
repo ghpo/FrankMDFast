@@ -380,6 +380,26 @@ fn the_config_file_cannot_be_opened_in_the_editor() {
 }
 
 #[test]
+#[allow(clippy::disallowed_methods)]
+fn binary_attachment_is_not_opened_as_a_note() {
+    let f = Fixture::new();
+    std::fs::write(f.root.join("talk.m4a"), b"not a markdown note").unwrap();
+    let mut ws = f.workspace();
+    let (events, _) = ws.handle(Command::OpenNote {
+        path: p("talk.m4a"),
+    });
+    assert!(
+        events.iter().any(|e| matches!(e, Event::Error(_))),
+        "attachment paths are rejected"
+    );
+    assert!(
+        !events.iter().any(|e| matches!(e, Event::DocOpened { .. })),
+        "binary files are never read as notes"
+    );
+    assert_eq!(ws.snapshot().active, None);
+}
+
+#[test]
 fn create_note_appends_md_refuses_duplicates_and_opens_it() {
     let f = Fixture::new();
     let mut ws = f.workspace();

@@ -499,3 +499,145 @@ fn settings_can_generate_and_save_a_remote_token(cx: &mut TestAppContext) {
     assert_eq!(token.trim().len(), 64, "{fed}");
     assert!(token.trim().chars().all(|c| c.is_ascii_hexdigit()), "{fed}");
 }
+
+// Settings › Encryption can create the vault key (and persist the seal).
+#[gpui_kit::test]
+fn settings_can_create_an_encryption_key(cx: &mut TestAppContext) {
+    const PASSWORD: &str = "uma senha longa e unica para o teste";
+    let shell = open_shell(cx, WIDE, VaultFixture::sample());
+    let w = shell.window;
+    harness::press(cx, w, "ctrl-2 ctrl-,");
+    click(cx, &shell, "settings-category-encryption");
+    click(cx, &shell, "encryption-password");
+    harness::type_text(cx, w, PASSWORD);
+    click(cx, &shell, "encryption-confirm");
+    harness::type_text(cx, w, PASSWORD);
+    click(cx, &shell, "encryption-create");
+    let seal =
+        std::fs::read_to_string(shell.state_dir.join("encryption.json")).expect("seal written");
+    let seal = frankmd_crypto::SealFile::decode(&seal).expect("seal json");
+    assert!(seal.unlock(PASSWORD).is_ok());
+    assert!(seal.unlock("wrong password").is_err());
+
+    // Per-note encrypt/decrypt through the registry command (same path as the
+    // tree context menu).
+    click(cx, &shell, "settings-close");
+    let active = shell
+        .view
+        .read_with(cx, |shell, _| shell.active_path())
+        .expect("note open");
+    let run = |cx: &mut TestAppContext, id: &'static str| {
+        let view = shell.view.clone();
+        harness::in_window(cx, shell.window, move |window, cx| {
+            view.update(cx, |s, cx| s.run_command(id, window, cx))
+        });
+    };
+    run(cx, "file.encrypt");
+    let encrypted = std::fs::read(shell.root.join(&active)).expect("encrypted file");
+    assert!(frankmd_crypto::is_note_encrypted(&encrypted));
+    run(cx, "file.decrypt");
+    let plain = std::fs::read(shell.root.join(&active)).expect("plain file");
+    assert!(!frankmd_crypto::is_note_encrypted(&plain));
+}
+
+fn create_encryption_key_for_test(cx: &mut TestAppContext, shell: &Shell, password: &str) {
+    harness::press(cx, shell.window, "ctrl-2 ctrl-,");
+    click(cx, shell, "settings-category-encryption");
+    click(cx, shell, "encryption-password");
+    harness::type_text(cx, shell.window, password);
+    click(cx, shell, "encryption-confirm");
+    harness::type_text(cx, shell.window, password);
+    click(cx, shell, "encryption-create");
+    cx.run_until_parked();
+}
+
+fn run_shell_command(cx: &mut TestAppContext, shell: &Shell, id: &'static str) {
+    let view = shell.view.clone();
+    harness::in_window(cx, shell.window, move |window, cx| {
+        view.update(cx, |s, cx| s.run_command(id, window, cx))
+    });
+}
+
+#[gpui_kit::test]
+fn settings_export_and_import_seal_file(cx: &mut TestAppContext) {
+    const PASSWORD: &str = "uma senha longa e unica para o teste";
+    let shell = open_shell(cx, WIDE, VaultFixture::sample());
+    let w = shell.window;
+    create_encryption_key_for_test(cx, &shell, PASSWORD);
+
+    let exported = shell.state_dir.join("exported-seal.json");
+    click(cx, &shell, "encryption-export-file");
+    cx.simulate_new_path_selection({
+        let exported = exported.clone();
+        move |_directory| Some(exported.clone())
+    });
+    cx.run_until_parked();
+    let exported_text = std::fs::read_to_string(&exported).expect("seal exported");
+    let exported_seal = frankmd_crypto::SealFile::decode(&exported_text).expect("seal json");
+
+    click(cx, &shell, "encryption-import-file");
+    cx.simulate_path_prompt_response({
+        let exported = exported.clone();
+        move |_options| Some(vec![exported.clone()])
+    });
+    cx.run_until_parked();
+    assert!(
+        harness::is_shown(cx, w, "encryption-import-confirm"),
+        "existing seal asks for confirmation"
+    );
+    click(cx, &shell, "encryption-import-confirm");
+    cx.run_until_parked();
+
+    let state_text =
+        std::fs::read_to_string(shell.state_dir.join("encryption.json")).expect("state seal");
+    assert_eq!(
+        frankmd_crypto::SealFile::decode(&state_text).unwrap(),
+        exported_seal
+    );
+}
+
+#[gpui_kit::test]
+fn locked_note_shows_padlock_and_unlocks(cx: &mut TestAppContext) {
+    const PASSWORD: &str = "uma senha longa e unica para o teste";
+    let shell = open_shell(cx, WIDE, VaultFixture::sample());
+    let w = shell.window;
+    create_encryption_key_for_test(cx, &shell, PASSWORD);
+    click(cx, &shell, "settings-close");
+
+    let active = shell
+        .view
+        .read_with(cx, |shell, _| shell.active_path())
+        .expect("note open");
+    run_shell_command(cx, &shell, "file.encrypt");
+    cx.run_until_parked();
+    assert!(shell.view.read_with(cx, |shell, _| {
+        shell.active_path().as_deref() == Some(active.as_str())
+    }));
+    let row_lock: &'static str = Box::leak(format!("explorer-lock-{active}").into_boxed_str());
+    let lock_present = harness::in_window(cx, w, |window, _| window.try_find(row_lock).is_some());
+    assert!(lock_present, "tree row shows a padlock");
+
+    // Locking turns the open encrypted note into the padlock view.
+    run_shell_command(cx, &shell, "app.encryption_toggle");
+    cx.run_until_parked();
+    assert!(harness::is_shown(cx, w, "locked-note"));
+    assert!(
+        shell
+            .view
+            .read_with(cx, |shell, _| shell.active_path())
+            .is_none()
+    );
+
+    // The dock button opens the quick unlock dialog; the note reopens.
+    run_shell_command(cx, &shell, "app.encryption_toggle");
+    assert!(harness::is_shown(cx, w, "unlock-dialog"));
+    click(cx, &shell, "unlock-password");
+    harness::type_text(cx, w, PASSWORD);
+    click(cx, &shell, "unlock-confirm");
+    cx.run_until_parked();
+    assert!(!harness::is_shown(cx, w, "locked-note"));
+    assert_eq!(
+        shell.view.read_with(cx, |shell, _| shell.active_path()),
+        Some(active)
+    );
+}

@@ -1,0 +1,24 @@
+[package]
+name = "frankmd-crypto"
+description = "At-rest encryption for FrankMDFast notes and media (Argon2id + XChaCha20-Poly1305)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+argon2.workspace = true
+chacha20poly1305.workspace = true
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+getrandom.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

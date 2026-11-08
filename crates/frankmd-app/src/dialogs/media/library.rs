@@ -149,6 +149,61 @@ impl MediaLibraryPane {
         &self.vm
     }
 
+    fn media_encrypted(&self, path: &str) -> bool {
+        let abs = self.services.notes_root().join(path);
+        let Ok(mut file) = std::fs::File::open(abs) else {
+            return false;
+        };
+        use std::io::Read as _;
+        let mut prefix = [0u8; 11];
+        let n = file.read(&mut prefix).unwrap_or(0);
+        prefix[..n].starts_with(frankmd_crypto::MEDIA_MAGIC)
+    }
+
+    fn toggle_media_encryption(
+        &mut self,
+        path: &str,
+        encrypt: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.services.encryption.is_unlocked() {
+            cx.emit(MediaEvent::Status {
+                text: t(cx, "settings_sheet.encryption.locked_hint"),
+                error: true,
+            });
+            return;
+        }
+        let abs = self.services.notes_root().join(path);
+        let result = if encrypt {
+            crate::encryption::encrypt_media_file(&self.services.encryption, &abs)
+        } else {
+            crate::encryption::decrypt_media_file(&self.services.encryption, &abs)
+        };
+        match result {
+            Ok(()) => {
+                let key = if encrypt {
+                    "library.media_encrypted"
+                } else {
+                    "library.media_decrypted"
+                };
+                cx.emit(MediaEvent::Status {
+                    text: t(cx, key),
+                    error: false,
+                });
+                let effects = self.vm.open();
+                self.run(effects, window, cx);
+            }
+            Err(err) => {
+                cx.emit(MediaEvent::Status {
+                    text: SharedString::from(format!("{err:#}")),
+                    error: true,
+                });
+            }
+        }
+        cx.notify();
+    }
+
     /// Open (lists media once per open). `note` = the open note's vault path.
     pub fn open(&mut self, note: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
         self.note = note;
@@ -536,6 +591,7 @@ impl MediaLibraryPane {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let path = card.path.clone();
+        let encrypted = self.media_encrypted(&path);
         let (p1, p2, p3, p4, p5) = (
             path.clone(),
             path.clone(),
@@ -563,7 +619,16 @@ impl MediaLibraryPane {
                     .on_click(
                         cx.listener(move |this, _, window, cx| this.open_detail(&p1, window, cx)),
                     )
-                    .child(if card.kind == MediaKind::Video {
+                    .child(if encrypted {
+                        div()
+                            .size_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(theme.secondary)
+                            .child("⚿")
+                            .into_any_element()
+                    } else if card.kind == MediaKind::Video {
                         div()
                             .size_full()
                             .flex()
@@ -616,6 +681,20 @@ impl MediaLibraryPane {
                                     this.request_rename(&p4, window, cx)
                                 })),
                         )
+                    })
+                    .child({
+                        let pe = path.clone();
+                        let label = if encrypted {
+                            t(cx, "library.decrypt")
+                        } else {
+                            t(cx, "library.encrypt")
+                        };
+                        Button::new(SharedString::from(format!("library-crypto-{path}")))
+                            .xsmall()
+                            .label(label)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.toggle_media_encryption(&pe, !encrypted, window, cx)
+                            }))
                     })
                     .child(
                         Button::new(SharedString::from(format!("library-delete-{path}")))
@@ -726,6 +805,7 @@ impl MediaLibraryPane {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let encrypted = self.media_encrypted(&card.path);
         let dims = self
             .detail_dims
             .as_ref()
@@ -779,7 +859,16 @@ impl MediaLibraryPane {
                     .h(px(280.))
                     .rounded(theme.radius)
                     .overflow_hidden()
-                    .child(if card.kind == MediaKind::Video {
+                    .child(if encrypted {
+                        div()
+                            .size_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(theme.secondary)
+                            .child("⚿")
+                            .into_any_element()
+                    } else if card.kind == MediaKind::Video {
                         div()
                             .size_full()
                             .flex()

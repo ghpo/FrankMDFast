@@ -35,6 +35,12 @@ pub enum FsError {
     /// (backlinks' `ArgumentError`).
     #[error("{0}")]
     InvalidPath(String),
+    /// The note/media is encrypted and the vault key is locked.
+    #[error("{0}")]
+    Locked(String),
+    /// Encryption/decryption failed.
+    #[error("{0}")]
+    Crypto(String),
     /// EACCES / EPERM / EROFS.
     #[error("permission denied: {0}")]
     PermissionDenied(String),
@@ -55,6 +61,7 @@ impl FsError {
             Self::NotFound(_) => "NotesService::NotFoundError",
             Self::RevisionConflict(_) => "NotesService::RevisionConflictError",
             Self::NotEmpty(_) => "NotesService::InvalidPathError",
+            Self::Locked(_) | Self::Crypto(_) => "FrankMDFast::CryptoError",
             Self::InvalidPath(message) if message == BACKLINKS_INVALID_PATH => "ArgumentError",
             Self::InvalidPath(_) => "NotesService::InvalidPathError",
             Self::PermissionDenied(_) => "Errno::EACCES",

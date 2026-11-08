@@ -3,12 +3,13 @@
 //! Changes apply live and are written to `.fed` through the workspace.
 //!
 //! Categories: Appearance, Editor, Writing, Preview, Files, Media,
-//! Integrations, Remote (how to access this vault from another device), Hugo,
-//! Diagnostics (config sources) and About. The scope
+//! Integrations, Remote, Encryption, Hugo, Diagnostics and About. The scope
 //! toggle picks where edits go: *This vault* writes `.fed`, *All vaults* the
 //! global `config.toml` (both through `frankmd-config`). Secrets are never
 //! shown or echoed: a set secret reads "Set", and replacing one uses a
 //! masked input that starts empty.
+
+use std::path::PathBuf;
 
 use crate::scale::px;
 use frankmd_config::{Key, Provenance, Value};
@@ -37,13 +38,14 @@ pub(crate) enum Category {
     Media,
     Integrations,
     Remote,
+    Encryption,
     Hugo,
     Diagnostics,
     About,
 }
 
 impl Category {
-    const ALL: [Category; 11] = [
+    const ALL: [Category; 12] = [
         Self::Appearance,
         Self::Editor,
         Self::Writing,
@@ -52,6 +54,7 @@ impl Category {
         Self::Media,
         Self::Integrations,
         Self::Remote,
+        Self::Encryption,
         Self::Hugo,
         Self::Diagnostics,
         Self::About,
@@ -67,6 +70,7 @@ impl Category {
             Self::Media => "media",
             Self::Integrations => "integrations",
             Self::Remote => "remote",
+            Self::Encryption => "encryption",
             Self::Hugo => "hugo",
             Self::Diagnostics => "diagnostics",
             Self::About => "about",
@@ -496,6 +500,16 @@ pub(crate) struct SettingsState {
     remote_port: Option<Entity<InputState>>,
     /// Access-token input (Settings › Remote).
     remote_token: Option<Entity<InputState>>,
+    /// Encryption password input.
+    encryption_password: Option<Entity<InputState>>,
+    /// Encryption confirmation input.
+    encryption_confirm: Option<Entity<InputState>>,
+    /// Seal backup import input.
+    encryption_backup: Option<Entity<InputState>>,
+    /// File chosen for import, waiting for overwrite confirmation.
+    pending_seal_import: Option<PathBuf>,
+    /// Background export/import tasks kept alive by the shell.
+    encryption_jobs: Vec<Task<()>>,
     /// Secret rows whose "Change…" input is open.
     pub(crate) editing_secrets: std::collections::HashSet<Key>,
     /// Inline error of the last failed write, by key.
@@ -519,6 +533,11 @@ impl SettingsState {
                 inputs: Default::default(),
                 remote_port: None,
                 remote_token: None,
+                encryption_password: None,
+                encryption_confirm: None,
+                encryption_backup: None,
+                pending_seal_import: None,
+                encryption_jobs: Vec::new(),
                 editing_secrets: Default::default(),
                 errors: Default::default(),
                 subscriptions: Vec::new(),
@@ -838,6 +857,12 @@ impl Shell {
         if query.is_empty() && self.settings.category == Category::Remote {
             body.push(
                 self.render_remote_panel(&theme, config.as_deref(), window, cx)
+                    .into_any_element(),
+            );
+        }
+        if query.is_empty() && self.settings.category == Category::Encryption {
+            body.push(
+                self.render_encryption_panel(&theme, window, cx)
                     .into_any_element(),
             );
         }
@@ -1610,6 +1635,569 @@ impl Shell {
             token,
             locale: self.locale_override.map(|locale| locale.code().to_owned()),
         })
+    }
+
+    /// Settings › Encryption: create/unlock/lock, change the password and back
+    /// up/import the seal.
+    fn render_encryption_panel(
+        &mut self,
+        theme: &gpui_kit::component::theme::Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if self.settings.encryption_password.is_none() {
+            let password = cx.new(|cx| InputState::new(window, cx).masked(true));
+            let confirm = cx.new(|cx| InputState::new(window, cx).masked(true));
+            let backup = cx.new(|cx| InputState::new(window, cx));
+            self.settings.encryption_password = Some(password);
+            self.settings.encryption_confirm = Some(confirm);
+            self.settings.encryption_backup = Some(backup);
+        }
+        let password_input = self.settings.encryption_password.clone().expect("created");
+        let confirm_input = self.settings.encryption_confirm.clone().expect("created");
+        let backup_input = self.settings.encryption_backup.clone().expect("created");
+
+        let has_seal = self.encryption.seal().is_some();
+        let unlocked = self.encryption.is_unlocked();
+        let (status_text, status_color) = if !has_seal {
+            (
+                i18n::t(cx, "settings_sheet.encryption.status_unconfigured"),
+                theme.warning,
+            )
+        } else if unlocked {
+            (
+                i18n::t(cx, "settings_sheet.encryption.status_unlocked"),
+                theme.success,
+            )
+        } else {
+            (
+                i18n::t(cx, "settings_sheet.encryption.status_locked"),
+                theme.muted_foreground,
+            )
+        };
+
+        let title = |text: SharedString| div().text_sm().font_semibold().child(text);
+        let paragraph = |text: SharedString| {
+            div()
+                .w_full()
+                .min_w_0()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(text)
+        };
+        let label = |text: SharedString| {
+            div()
+                .text_xs()
+                .text_color(theme.muted_foreground)
+                .child(text)
+        };
+
+        let input_row = |id: &'static str, input: &Entity<InputState>, button: Button| {
+            h_flex()
+                .w_full()
+                .min_w_0()
+                .gap_2()
+                .items_center()
+                .child(div().flex_1().min_w_0().child(Input::new(input).id(id)))
+                .child(button)
+        };
+
+        let create_this = cx.entity().downgrade();
+        let create = Button::new("encryption-create")
+            .small()
+            .primary()
+            .label(i18n::t(cx, "settings_sheet.encryption.create"))
+            .on_click(move |_, window, cx| {
+                let _ = create_this.update(cx, |shell, cx| shell.create_encryption_key(window, cx));
+            });
+        let unlock_this = cx.entity().downgrade();
+        let unlock = Button::new("encryption-unlock")
+            .small()
+            .primary()
+            .label(i18n::t(cx, "settings_sheet.encryption.unlock"))
+            .on_click(move |_, window, cx| {
+                let _ = unlock_this.update(cx, |shell, cx| shell.unlock_encryption(window, cx));
+            });
+        let lock_this = cx.entity().downgrade();
+        let lock = Button::new("encryption-lock")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.encryption.lock"))
+            .on_click(move |_, window, cx| {
+                let _ = lock_this.update(cx, |shell, cx| shell.lock_encryption(window, cx));
+            });
+        let change_this = cx.entity().downgrade();
+        let change = Button::new("encryption-change")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.encryption.change"))
+            .on_click(move |_, window, cx| {
+                let _ = change_this
+                    .update(cx, |shell, cx| shell.change_encryption_password(window, cx));
+            });
+        let copy_this = cx.entity().downgrade();
+        let copy_backup = Button::new("encryption-copy-backup")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.encryption.backup_copy"))
+            .on_click(move |_, _, cx| {
+                let _ = copy_this.update(cx, |shell, cx| shell.copy_seal_backup(cx));
+            });
+        let export_this = cx.entity().downgrade();
+        let export_file = Button::new("encryption-export-file")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.encryption.export_file"))
+            .on_click(move |_, window, cx| {
+                let _ = export_this.update(cx, |shell, cx| shell.export_seal_file(window, cx));
+            });
+        let import_file_this = cx.entity().downgrade();
+        let import_file = Button::new("encryption-import-file")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.encryption.import_file"))
+            .on_click(move |_, window, cx| {
+                let _ = import_file_this.update(cx, |shell, cx| shell.import_seal_file(window, cx));
+            });
+        let import_this = cx.entity().downgrade();
+        let import = Button::new("encryption-import")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.encryption.import"))
+            .on_click(move |_, window, cx| {
+                let _ = import_this.update(cx, |shell, cx| shell.import_seal_backup(window, cx));
+            });
+
+        v_flex()
+            .id("settings-encryption")
+            .test_support()
+            .w_full()
+            .min_w_0()
+            .gap_2()
+            .pt_1()
+            .child(title(i18n::t(cx, "settings_sheet.encryption.title")))
+            .child(paragraph(i18n::t(cx, "settings_sheet.encryption.intro")))
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_semibold()
+                            .child(i18n::t(cx, "settings_sheet.encryption.status")),
+                    )
+                    .child(div().text_sm().text_color(status_color).child(status_text)),
+            )
+            .when(!has_seal, |el| {
+                el.child(label(i18n::t(cx, "settings_sheet.encryption.password")))
+                    .child(input_row("encryption-password", &password_input, create))
+                    .child(label(i18n::t(cx, "settings_sheet.encryption.confirm")))
+                    .child(
+                        div()
+                            .w_full()
+                            .child(Input::new(&confirm_input).id("encryption-confirm")),
+                    )
+            })
+            .when(has_seal && !unlocked, |el| {
+                el.child(label(i18n::t(cx, "settings_sheet.encryption.password")))
+                    .child(input_row("encryption-password", &password_input, unlock))
+            })
+            .when(has_seal && unlocked, |el| {
+                el.child(h_flex().gap_2().items_center().child(lock).child(change))
+                    .child(label(i18n::t(cx, "settings_sheet.encryption.new_password")))
+                    .child(
+                        div()
+                            .w_full()
+                            .child(Input::new(&password_input).id("encryption-password")),
+                    )
+                    .child(label(i18n::t(cx, "settings_sheet.encryption.confirm")))
+                    .child(
+                        div()
+                            .w_full()
+                            .child(Input::new(&confirm_input).id("encryption-confirm")),
+                    )
+            })
+            .child(title(i18n::t(cx, "settings_sheet.encryption.backup_title")))
+            .child(paragraph(i18n::t(
+                cx,
+                "settings_sheet.encryption.backup_hint",
+            )))
+            .when(has_seal, |el| {
+                el.child(
+                    h_flex()
+                        .gap_2()
+                        .flex_wrap()
+                        .child(copy_backup)
+                        .child(export_file),
+                )
+            })
+            .child(import_file)
+            .child(label(i18n::t(
+                cx,
+                "settings_sheet.encryption.backup_import",
+            )))
+            .child(input_row("encryption-backup", &backup_input, import))
+            .when_some(self.settings.pending_seal_import.clone(), |el, path| {
+                let confirm_path = path.clone();
+                el.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.warning)
+                        .child(i18n::t_args(
+                            cx,
+                            "settings_sheet.encryption.confirm_replace",
+                            &[("path", &path.display().to_string())],
+                        )),
+                )
+                .child(
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("encryption-import-confirm")
+                                .small()
+                                .primary()
+                                .label(i18n::t(cx, "settings_sheet.encryption.import"))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.apply_seal_import(confirm_path.clone(), window, cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("encryption-import-cancel")
+                                .small()
+                                .label(i18n::t(cx, "common.cancel"))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.settings.pending_seal_import = None;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+            })
+            .child(
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(theme.warning)
+                    .child(i18n::t(cx, "settings_sheet.encryption.warning")),
+            )
+            .into_any_element()
+    }
+
+    fn encryption_password(&self, cx: &Context<Self>) -> String {
+        self.settings
+            .encryption_password
+            .as_ref()
+            .map(|input| input.read(cx).value().to_string())
+            .unwrap_or_default()
+    }
+
+    fn encryption_confirm(&self, cx: &Context<Self>) -> String {
+        self.settings
+            .encryption_confirm
+            .as_ref()
+            .map(|input| input.read(cx).value().to_string())
+            .unwrap_or_default()
+    }
+
+    fn clear_encryption_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for input in [
+            self.settings.encryption_password.clone(),
+            self.settings.encryption_confirm.clone(),
+            self.settings.encryption_backup.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            input.update(cx, |state, cx| state.set_value("", window, cx));
+        }
+    }
+
+    pub(crate) fn create_encryption_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let password = self.encryption_password(cx);
+        let confirm = self.encryption_confirm(cx);
+        if password != confirm {
+            let message = i18n::t(cx, "settings_sheet.encryption.password_mismatch");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        if crate::encryption::validate_password(&password).is_err() {
+            let message = i18n::t(cx, "settings_sheet.encryption.password_short");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        match self.encryption.create(&password) {
+            Ok(seal) => {
+                if let Err(err) = crate::encryption::save_seal(&self.state_dir, &seal) {
+                    let message = SharedString::from(format!("{err:#}"));
+                    self.show_message(&message, true, cx);
+                    return;
+                }
+                self.clear_encryption_inputs(window, cx);
+                let message = i18n::t(cx, "settings_sheet.encryption.created");
+                self.show_message(&message, false, cx);
+                self.refresh_remote(cx);
+            }
+            Err(err) => {
+                let message = SharedString::from(err.to_string());
+                self.show_message(&message, true, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn unlock_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let password = self.encryption_password(cx);
+        match self.encryption.unlock(&password) {
+            Ok(()) => {
+                let message = i18n::t(cx, "settings_sheet.encryption.unlocked");
+                self.show_message(&message, false, cx);
+            }
+            Err(err) => {
+                let message = i18n::t(cx, "settings_sheet.encryption.wrong_password");
+                let _ = err;
+                self.show_message(&message, true, cx);
+            }
+        }
+        self.clear_encryption_inputs(window, cx);
+        if self.encryption.is_unlocked()
+            && let Some(path) = self.locked_note.take()
+        {
+            self.open_path(&path, window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn lock_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.lock_vault(window, cx);
+    }
+
+    pub(crate) fn change_encryption_password(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.encryption.is_unlocked() {
+            let message = i18n::t(cx, "settings_sheet.encryption.status_locked");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        let password = self.encryption_password(cx);
+        let confirm = self.encryption_confirm(cx);
+        if password != confirm {
+            let message = i18n::t(cx, "settings_sheet.encryption.password_mismatch");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        if crate::encryption::validate_password(&password).is_err() {
+            let message = i18n::t(cx, "settings_sheet.encryption.password_short");
+            self.show_message(&message, true, cx);
+            return;
+        }
+        let root = self.vault_root.clone();
+        let result = self.encryption.rekey(&password, |old, new| {
+            crate::encryption::rekey_files(&root, old, new).map(|_| ())
+        });
+        match result {
+            Ok(seal) => {
+                if let Err(err) = crate::encryption::save_seal(&self.state_dir, &seal) {
+                    let message = SharedString::from(format!("{err:#}"));
+                    self.show_message(&message, true, cx);
+                    return;
+                }
+                self.clear_encryption_inputs(window, cx);
+                let message = i18n::t(cx, "settings_sheet.encryption.changed");
+                self.show_message(&message, false, cx);
+                self.refresh_remote(cx);
+            }
+            Err(err) => {
+                let message = SharedString::from(err.to_string());
+                self.show_message(&message, true, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn copy_seal_backup(&mut self, cx: &mut Context<Self>) {
+        match crate::encryption::seal_backup(&self.encryption) {
+            Some(text) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                let message = i18n::t(cx, "settings_sheet.encryption.backup_copied");
+                self.show_message(&message, false, cx);
+            }
+            None => {
+                let message = i18n::t(cx, "settings_sheet.encryption.status_unconfigured");
+                self.show_message(&message, true, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn seal_file_name(&self) -> String {
+        let mut name = String::from("frankmd-seal-");
+        for ch in self.vault_name.chars() {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                name.push(ch);
+            } else if !name.ends_with('-') {
+                name.push('-');
+            }
+        }
+        name.push_str(".json");
+        name
+    }
+
+    pub(crate) fn export_seal_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(seal) = self.encryption.seal() else {
+            let message = i18n::t(cx, "settings_sheet.encryption.status_unconfigured");
+            self.show_message(&message, true, cx);
+            return;
+        };
+        let directory = self
+            .vault_root
+            .parent()
+            .unwrap_or(&self.vault_root)
+            .to_path_buf();
+        let suggested = self.seal_file_name();
+        let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
+        let task = cx.spawn_in(window, async move |this, cx| {
+            let path = match rx.await {
+                Ok(Ok(Some(path))) => path,
+                Ok(Err(err)) => {
+                    this.update_in(cx, |shell, _window, cx| {
+                        let message = SharedString::from(format!(
+                            "{}: {err:#}",
+                            i18n::t(cx, "settings_sheet.encryption.export_failed")
+                        ));
+                        shell.show_message(&message, true, cx);
+                        cx.notify();
+                    })
+                    .ok();
+                    return;
+                }
+                _ => return,
+            };
+            let result = cx
+                .background_executor()
+                .spawn(async move { crate::encryption::export_seal_to(&path, &seal) })
+                .await;
+            this.update_in(cx, |shell, _window, cx| {
+                match result {
+                    Ok(()) => {
+                        let message = i18n::t(cx, "settings_sheet.encryption.export_saved");
+                        shell.show_message(&message, false, cx);
+                    }
+                    Err(err) => {
+                        let message = SharedString::from(format!(
+                            "{}: {err:#}",
+                            i18n::t(cx, "settings_sheet.encryption.export_failed")
+                        ));
+                        shell.show_message(&message, true, cx);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        });
+        self.settings.encryption_jobs.push(task);
+    }
+
+    pub(crate) fn import_seal_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let prompt = Some(i18n::t(cx, "settings_sheet.encryption.import_file"));
+        let rx = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt,
+        });
+        let task = cx.spawn_in(window, async move |this, cx| {
+            let path = match rx.await {
+                Ok(Ok(Some(mut paths))) => match paths.pop() {
+                    Some(path) => path,
+                    None => return,
+                },
+                Ok(Err(err)) => {
+                    this.update_in(cx, |shell, _window, cx| {
+                        let message = SharedString::from(format!(
+                            "{}: {err:#}",
+                            i18n::t(cx, "settings_sheet.encryption.import_failed")
+                        ));
+                        shell.show_message(&message, true, cx);
+                        cx.notify();
+                    })
+                    .ok();
+                    return;
+                }
+                _ => return,
+            };
+            this.update_in(cx, |shell, window, cx| {
+                if shell.encryption.seal().is_some() {
+                    shell.settings.pending_seal_import = Some(path);
+                    cx.notify();
+                } else {
+                    shell.apply_seal_import(path, window, cx);
+                }
+            })
+            .ok();
+        });
+        self.settings.encryption_jobs.push(task);
+    }
+
+    pub(crate) fn apply_seal_import(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let seal = match crate::encryption::read_seal_file(&path) {
+            Ok(seal) => seal,
+            Err(err) => {
+                let message = SharedString::from(format!(
+                    "{}: {err:#}",
+                    i18n::t(cx, "settings_sheet.encryption.import_failed")
+                ));
+                self.show_message(&message, true, cx);
+                return;
+            }
+        };
+        if let Err(err) = crate::encryption::save_seal(&self.state_dir, &seal) {
+            let message = SharedString::from(format!("{err:#}"));
+            self.show_message(&message, true, cx);
+            return;
+        }
+        self.encryption.set_seal(Some(seal));
+        self.settings.pending_seal_import = None;
+        self.lock_vault(window, cx);
+        self.refresh_remote(cx);
+        let message = i18n::t(cx, "settings_sheet.encryption.backup_imported");
+        self.show_message(&message, false, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn import_seal_backup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self
+            .settings
+            .encryption_backup
+            .as_ref()
+            .map(|input| input.read(cx).value().to_string())
+            .unwrap_or_default();
+        match crate::encryption::import_seal(&self.encryption, &text) {
+            Ok(seal) => {
+                if let Err(err) = crate::encryption::save_seal(&self.state_dir, &seal) {
+                    let message = SharedString::from(format!("{err:#}"));
+                    self.show_message(&message, true, cx);
+                    return;
+                }
+                self.clear_encryption_inputs(window, cx);
+                let message = i18n::t(cx, "settings_sheet.encryption.backup_imported");
+                self.show_message(&message, false, cx);
+                self.refresh_remote(cx);
+            }
+            Err(err) => {
+                let message = SharedString::from(format!("{err:#}"));
+                self.show_message(&message, true, cx);
+            }
+        }
+        cx.notify();
     }
 
     fn render_setting_row(

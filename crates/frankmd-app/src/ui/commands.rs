@@ -48,6 +48,29 @@ impl Shell {
                 self.settings.category = super::settings::Category::Remote;
                 self.open_overlay(OverlayKind::Settings, window, cx);
             }
+            "app.settings_encryption" => {
+                self.settings.category = super::settings::Category::Encryption;
+                self.open_overlay(OverlayKind::Settings, window, cx);
+            }
+            "file.encrypt" => {
+                if let Some(path) = self.active_path() {
+                    self.request_note_encryption(&path, true, window, cx);
+                }
+            }
+            "file.decrypt" => {
+                if let Some(path) = self.active_path() {
+                    self.request_note_encryption(&path, false, window, cx);
+                }
+            }
+            "app.encryption_toggle" => {
+                if self.encryption.seal().is_none() {
+                    self.open_encryption_settings(window, cx);
+                } else if self.encryption.is_unlocked() {
+                    self.lock_vault(window, cx);
+                } else {
+                    self.open_unlock(window, cx);
+                }
+            }
             "help.toggle" => {
                 self.help_tab = HelpTab::Markdown;
                 self.toggle_overlay(OverlayKind::Help, window, cx);

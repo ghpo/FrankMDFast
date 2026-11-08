@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 frankmd-core.workspace = true
+frankmd-crypto.workspace = true
 frankmd-fs.workspace = true
 frankmd-config.workspace = true
 frankmd-i18n.workspace = true

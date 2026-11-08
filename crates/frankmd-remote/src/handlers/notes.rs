@@ -43,6 +43,7 @@ pub async fn get_note(
         "mtime": file.mtime,
         "valid_utf8": valid_utf8,
         "read_only": !valid_utf8,
+        "encrypted": file.encrypted,
         "exists": true
     })))
 }
@@ -303,8 +304,7 @@ pub async fn get_asset(
         .vault
         .safe_path(raw.trim_matches('/'), true)
         .map_err(|e| fs_error(&e))?;
-    let bytes = std::fs::read(contained.abs())
-        .map_err(|e| ApiError::internal(format!("could not read asset: {e}")))?;
+    let bytes = super::read_maybe_encrypted(&state, contained.abs())?;
     let mime = mime_guess::from_path(contained.abs())
         .first_or_octet_stream()
         .to_string();

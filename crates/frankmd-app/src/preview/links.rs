@@ -16,6 +16,9 @@ pub enum LinkTarget {
     Anchor(String),
     /// Open another note (absolute path, contained in the vault).
     Note(PathBuf),
+    /// A local file referenced by the note (audio, video, PDF, archive, …).
+    /// Absolute path, contained in the vault.
+    Attachment(PathBuf),
     /// Not followed (unsupported scheme, escapes the vault, …).
     Blocked,
 }
@@ -84,16 +87,22 @@ pub fn classify_link(href: &str, cx: &Context) -> LinkTarget {
     if has_scheme(&lower) || lower.starts_with("//") {
         return LinkTarget::Blocked;
     }
-    // FrankMD's in-app URLs: `/notes/<path>`.
+    // FrankMD's in-app URLs: `/notes/<path>` and the legacy image preview
+    // route `/images/preview/<path>`.
     let path = href.split(['#', '?']).next().unwrap_or_default();
     let path = path
         .strip_prefix("/notes/")
         .map(|p| format!("/{p}"))
+        .or_else(|| {
+            path.strip_prefix("/images/preview/")
+                .map(|p| format!("/images/{p}"))
+        })
         .unwrap_or_else(|| path.to_owned());
     if path.is_empty() {
         return LinkTarget::Blocked;
     }
     match cx.contained(&path) {
+        Some(abs) if !abs.to_string_lossy().ends_with(".md") => LinkTarget::Attachment(abs),
         Some(abs) => LinkTarget::Note(abs),
         None => LinkTarget::Blocked,
     }
@@ -208,6 +217,14 @@ mod tests {
             LinkTarget::Note(dir.join("x y.md"))
         );
         assert_eq!(classify_link("../../outside.md", &c), LinkTarget::Blocked);
+        assert_eq!(
+            classify_link("../images/talk.m4a", &c),
+            LinkTarget::Attachment(dir.join("images/talk.m4a"))
+        );
+        assert_eq!(
+            classify_link("/images/preview/talk%20one.mp3", &c),
+            LinkTarget::Attachment(dir.join("images/talk one.mp3"))
+        );
     }
 
     #[test]

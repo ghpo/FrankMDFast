@@ -34,6 +34,9 @@ pub fn build_router(state: Arc<ServerState>) -> Router {
     let protected = Router::new()
         .route("/", get(index))
         .route("/api/session", get(handlers::config::session))
+        .route("/api/encryption", get(handlers::encryption::status))
+        .route("/api/encryption/unlock", post(handlers::encryption::unlock))
+        .route("/api/encryption/lock", post(handlers::encryption::lock))
         .route("/api/tree", get(handlers::notes::tree))
         .route(
             "/api/note",

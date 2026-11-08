@@ -103,6 +103,8 @@ pub struct AutosaveSession<B: DraftBackend> {
     draft_revision: Option<String>,
     has_unsaved_changes: bool,
     is_offline: bool,
+    /// The active note is encrypted: never write plaintext drafts/backups.
+    encrypted: bool,
     /// Bumped whenever the active note is (re)loaded, cleared or deleted, so
     /// late responses for an earlier incarnation are recognised as stale.
     file_version: u64,
@@ -153,6 +155,7 @@ impl<B: DraftBackend> AutosaveSession<B> {
             draft_revision: None,
             has_unsaved_changes: false,
             is_offline: false,
+            encrypted: false,
             file_version: 0,
             next_ticket: 0,
             in_flight: None,
@@ -209,6 +212,12 @@ impl<B: DraftBackend> AutosaveSession<B> {
     /// (resets dirty, warning state and draft revision; remembers the server
     /// revision). Timers armed for the previous note stay armed but can no
     /// longer save it (their snapshot is stale).
+    /// Mark the active note as encrypted (drafts are skipped).
+    pub fn set_encrypted(&mut self, encrypted: bool) {
+        self.encrypted = encrypted;
+    }
+
+    /// Load the active file as the autosave base.
     pub fn set_file(&mut self, doc: DocId, path: &str, content: &str, revision: Option<&str>) {
         self.dismiss_content_loss_warning();
         self.active = Some(ActiveDoc {
@@ -517,9 +526,11 @@ impl<B: DraftBackend> AutosaveSession<B> {
             Timer::OfflineBackup => {
                 if let Some(backup) = self.offline_backup.take() {
                     // offline_backup_controller: a failed backup is only a warning.
-                    let _ = self
-                        .drafts
-                        .backup_save(&draft_subject(backup.doc), &backup.content);
+                    if !self.encrypted {
+                        let _ = self
+                            .drafts
+                            .backup_save(&draft_subject(backup.doc), &backup.content);
+                    }
                 }
             }
             Timer::StatusClear => {
@@ -778,7 +789,7 @@ impl<B: DraftBackend> AutosaveSession<B> {
         content: &str,
         base_revision: &str,
     ) -> Result<Option<DraftRecord>, DraftError> {
-        if self.has_pending_recovery(doc) {
+        if self.encrypted || self.has_pending_recovery(doc) {
             return Ok(None);
         }
         let base = self

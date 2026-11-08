@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 frankmd-core.workspace = true
+frankmd-crypto.workspace = true
 thiserror.workspace = true
 serde_json.workspace = true
 jiff.workspace = true
