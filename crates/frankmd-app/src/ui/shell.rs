@@ -377,7 +377,12 @@ impl Shell {
         shell.layout.on_resize(shell.width);
         shell.apply_settings(window, cx);
         shell.preview.update(cx, |p, cx| {
-            p.set_vault_root(Some(config.vault_root.clone()), cx)
+            p.set_vault_root(Some(config.vault_root.clone()), cx);
+            p.set_encryption(
+                Arc::clone(&shell.encryption),
+                shell.state_dir.join("attachment-cache"),
+                cx,
+            );
         });
         if config.watch {
             shell.start_watchers(cx);

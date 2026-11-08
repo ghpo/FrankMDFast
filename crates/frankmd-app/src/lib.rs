@@ -11,6 +11,7 @@ pub mod cli;
 pub mod dialogs;
 pub mod editor;
 pub mod encryption;
+pub mod note_attachments;
 pub mod preview;
 pub mod remote;
 pub mod scale;

@@ -816,7 +816,7 @@ impl PreviewPane {
         cx: &mut Context<Self>,
     ) -> Option<gpui_kit::ImageSource> {
         match links::classify_image(src?, &self.link_cx) {
-            ImageSource::Local(path) => Some(path.into()),
+            ImageSource::Local(path) => self.decrypted_image_path(&path).map(Into::into),
             ImageSource::Remote(url) => self.remote_image(&url, cx).map(Into::into),
             ImageSource::Blocked => None,
         }

@@ -31,7 +31,12 @@
 Encrypt **selected notes and media** with one vault password
 (Argon2id + XChaCha20-Poly1305). Filenames stay visible; content is sealed.
 Create/unlock/lock and back up the seal in **Settings › Encryption**; right-click
-a note to **Encrypt/Decrypt**, and use the media library for files. The paperclip
+a note to **Encrypt/Decrypt** — the note and every local attachment it references
+are encrypted/decrypted together. Use **Encrypt attachments of encrypted notes**
+for notes encrypted by older versions, and the media library for standalone
+files. Shared attachments stay encrypted while another encrypted note uses
+them; with the vault unlocked, encrypted images are rendered through a private
+temporary cache. The paperclip
 in the preview header lists every local attachment of the note (images, video,
 audio, PDFs, archives) with **Save as…** and **Save all…**. See
 [docs/encryption.md](docs/encryption.md) for the format, key backup, password

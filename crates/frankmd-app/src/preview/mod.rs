@@ -21,7 +21,9 @@ pub mod style;
 mod viewer;
 
 use crate::scale::px;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::hash::{Hash as _, Hasher as _};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,6 +35,7 @@ use gpui_kit::{
     ListOffset, ListState, SharedString, Task, Window,
 };
 
+pub(crate) use links::{Context as LinkContext, classify_link};
 pub use links::{ImageSource, LinkTarget};
 pub use style::{DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, PreviewColors, ZOOM_STEP, clamp_zoom, text_px};
 
@@ -113,6 +116,9 @@ pub struct PreviewPane {
     pending_line: Option<u32>,
     last_reported_line: Option<u32>,
     attachments: Vec<AttachmentLink>,
+    encryption: Option<Arc<frankmd_crypto::Session>>,
+    media_cache: Option<PathBuf>,
+    decrypted_media: HashMap<PathBuf, PathBuf>,
     highlighter: Arc<dyn CodeHighlighter>,
 }
 
@@ -137,6 +143,15 @@ fn attachments_in(source: &str, cx: &links::Context) -> Vec<AttachmentLink> {
         }
     }
     out
+}
+
+impl Drop for PreviewPane {
+    #[allow(clippy::disallowed_methods)]
+    fn drop(&mut self) {
+        if let Some(dir) = &self.media_cache {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }
 
 impl EventEmitter<PreviewEvent> for PreviewPane {}
@@ -188,6 +203,9 @@ impl PreviewPane {
             pending_line: None,
             last_reported_line: None,
             attachments: Vec::new(),
+            encryption: None,
+            media_cache: None,
+            decrypted_media: HashMap::new(),
             highlighter: Arc::new(BuiltinHighlighter),
         }
     }
@@ -278,6 +296,72 @@ impl PreviewPane {
             self.scroll_to_source_line(line, cx);
         }
         cx.notify();
+    }
+
+    /// Install the encryption session and the private cache used to render
+    /// encrypted images while the vault is unlocked.
+    pub fn set_encryption(
+        &mut self,
+        session: Arc<frankmd_crypto::Session>,
+        cache_dir: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        self.encryption = Some(session);
+        self.media_cache = Some(cache_dir);
+        self.clear_media_cache(cx);
+    }
+
+    /// Remove the decrypted-image cache (vault locked, window closing).
+    #[allow(clippy::disallowed_methods)]
+    pub fn clear_media_cache(&mut self, cx: &mut Context<Self>) {
+        self.decrypted_media.clear();
+        if let Some(dir) = &self.media_cache {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        cx.notify();
+    }
+
+    /// A viewable path for a local image: the file itself when plaintext, or a
+    /// private temporary decrypted copy when the vault is unlocked.
+    #[allow(clippy::disallowed_methods)]
+    fn decrypted_image_path(&mut self, path: &Path) -> Option<PathBuf> {
+        if !crate::encryption::media_is_encrypted(path) {
+            return Some(path.to_path_buf());
+        }
+        if let Some(cached) = self.decrypted_media.get(path)
+            && cached.is_file()
+        {
+            return Some(cached.clone());
+        }
+        let session = self.encryption.as_ref()?;
+        if !session.is_unlocked() {
+            return None;
+        }
+        let cache_dir = self.media_cache.as_ref()?;
+        crate::app_fs::ensure_private_dir(cache_dir).ok()?;
+        let metadata = std::fs::metadata(path).ok()?;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        path.hash(&mut hasher);
+        metadata.len().hash(&mut hasher);
+        metadata.modified().ok().hash(&mut hasher);
+        let hash = hasher.finish();
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("bin");
+        let destination = cache_dir.join(format!("{hash:016x}.{extension}"));
+        if !destination.is_file() {
+            let bytes = crate::encryption::read_media(session, path).ok()?;
+            frankmd_fs::atomic::atomic_replace(
+                &destination,
+                &bytes,
+                frankmd_fs::atomic::ModePolicy::Fixed(0o600),
+            )
+            .ok()?;
+        }
+        self.decrypted_media
+            .insert(path.to_path_buf(), destination.clone());
+        Some(destination)
     }
 
     /// Set the vault root (containment boundary for images and note links).

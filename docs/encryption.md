@@ -15,8 +15,9 @@ the content is sealed.
    **Encryption settings**).
 2. Create a key: choose a password with **at least 12 characters** and confirm.
 3. Right-click a note in the tree and choose **Encrypt note** (or
-   **Decrypt note** if it is already encrypted). The tree shows an open or
-   closed padlock in front of the name.
+   **Decrypt note** if it is already encrypted). The note and the local files
+   it references are encrypted together. The tree shows an open or closed
+   padlock in front of the name.
 4. Media: open the **Media Library**, pick a card and use **Encrypt** /
    **Decrypt**.
 5. Lock or unlock from the padlock button at the bottom of the sidebar (next
@@ -25,6 +26,36 @@ the content is sealed.
    working. There is no global keyboard shortcut for lock/unlock.
 6. Clicking a locked note shows a padlock panel with **Unlock**; the quick
    unlock dialog asks for the password and reopens the note.
+
+### Notes encrypted by older versions
+
+Notes encrypted by an earlier version may still have plaintext attachments.
+Use **Encrypt attachments of encrypted notes** in **Settings › Encryption** to
+run the migration once. It is available only while the vault is unlocked,
+skips files that are already encrypted and reports how many attachments were
+encrypted.
+
+### Shared attachments
+
+Attachments are ordinary vault files and can be used by several notes. When a
+note is **decrypted**:
+
+- attachments used only by that note are decrypted;
+- attachments still referenced by another encrypted note stay encrypted;
+- if another encrypted note cannot be read during the check, attachments stay
+  encrypted for safety.
+
+This prevents decrypting one note from exposing a file that another encrypted
+note still considers protected. The Media Library can still encrypt and
+decrypt standalone media manually.
+
+### Images in the preview
+
+While the vault is unlocked, encrypted images are decrypted into a private
+cache (`<per-vault state>/attachment-cache`, mode `0700`) only to render the
+preview and the image viewer. The cache is deleted when the vault is locked,
+when the window closes and on the next startup. While locked, an encrypted
+note shows the padlock panel and encrypted attachment images are not loaded.
 
 ## Cryptography
 
@@ -110,9 +141,11 @@ for the password first. The browser remote already serves non-note files from
 - **AI** features need the note readable; be aware that the decrypted text is
   sent to the configured provider when you use them.
 - **Media previews**: the media library shows a lock placeholder for encrypted
-  files; decrypt a file to preview it. Media encryption is in-memory with a
-  **512 MiB cap** (larger files are refused). S3/direct URLs and Hugo builds
-  cannot read encrypted files; use local media and don't encrypt Hugo content.
+  files; decrypt a file to preview it. Images referenced by an unlocked
+  encrypted note are served through the private preview cache described above.
+  Media encryption is in-memory with a **512 MiB cap** (larger files are
+  refused). S3/direct URLs and Hugo builds cannot read encrypted files; use
+  local media and don't encrypt Hugo content.
 - The quick-note plugin (Ctrl+Alt+N) writes plaintext; open the note in
   FrankMDFast and encrypt it afterwards.
 

@@ -509,7 +509,9 @@ pub(crate) struct SettingsState {
     /// File chosen for import, waiting for overwrite confirmation.
     pending_seal_import: Option<PathBuf>,
     /// Background export/import tasks kept alive by the shell.
-    encryption_jobs: Vec<Task<()>>,
+    pub(crate) encryption_jobs: Vec<Task<()>>,
+    /// Result of the "encrypt attachments of encrypted notes" migration.
+    pub(crate) encryption_repair: Option<(SharedString, bool)>,
     /// Secret rows whose "Change…" input is open.
     pub(crate) editing_secrets: std::collections::HashSet<Key>,
     /// Inline error of the last failed write, by key.
@@ -538,6 +540,7 @@ impl SettingsState {
                 encryption_backup: None,
                 pending_seal_import: None,
                 encryption_jobs: Vec::new(),
+                encryption_repair: None,
                 editing_secrets: Default::default(),
                 errors: Default::default(),
                 subscriptions: Vec::new(),
@@ -1735,6 +1738,16 @@ impl Shell {
                 let _ = change_this
                     .update(cx, |shell, cx| shell.change_encryption_password(window, cx));
             });
+        let repair_this = cx.entity().downgrade();
+        let repair_attachments = Button::new("encryption-repair-attachments")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.encryption.attachment_repair"))
+            .on_click(move |_, window, cx| {
+                let _ = repair_this.update(cx, |shell, cx| {
+                    shell.encrypt_attachments_of_encrypted_notes(window, cx)
+                });
+            });
         let copy_this = cx.entity().downgrade();
         let copy_backup = Button::new("encryption-copy-backup")
             .small()
@@ -1805,19 +1818,42 @@ impl Shell {
                     .child(input_row("encryption-password", &password_input, unlock))
             })
             .when(has_seal && unlocked, |el| {
-                el.child(h_flex().gap_2().items_center().child(lock).child(change))
-                    .child(label(i18n::t(cx, "settings_sheet.encryption.new_password")))
-                    .child(
-                        div()
-                            .w_full()
-                            .child(Input::new(&password_input).id("encryption-password")),
-                    )
-                    .child(label(i18n::t(cx, "settings_sheet.encryption.confirm")))
-                    .child(
-                        div()
-                            .w_full()
-                            .child(Input::new(&confirm_input).id("encryption-confirm")),
-                    )
+                el.child(
+                    h_flex()
+                        .gap_2()
+                        .items_center()
+                        .flex_wrap()
+                        .child(lock)
+                        .child(change)
+                        .child(repair_attachments),
+                )
+                .child(label(i18n::t(
+                    cx,
+                    "settings_sheet.encryption.attachment_repair_hint",
+                )))
+                .when_some(
+                    self.settings.encryption_repair.clone(),
+                    |el, (text, error)| {
+                        el.child(
+                            div()
+                                .text_xs()
+                                .text_color(if error { theme.danger } else { theme.success })
+                                .child(text),
+                        )
+                    },
+                )
+                .child(label(i18n::t(cx, "settings_sheet.encryption.new_password")))
+                .child(
+                    div()
+                        .w_full()
+                        .child(Input::new(&password_input).id("encryption-password")),
+                )
+                .child(label(i18n::t(cx, "settings_sheet.encryption.confirm")))
+                .child(
+                    div()
+                        .w_full()
+                        .child(Input::new(&confirm_input).id("encryption-confirm")),
+                )
             })
             .child(title(i18n::t(cx, "settings_sheet.encryption.backup_title")))
             .child(paragraph(i18n::t(

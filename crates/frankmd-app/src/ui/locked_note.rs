@@ -42,6 +42,8 @@ impl Shell {
                 .is_some_and(|(encrypted, _)| encrypted)
         });
         self.encryption.lock();
+        self.preview
+            .update(cx, |preview, cx| preview.clear_media_cache(cx));
         if let Some(path) = encrypted_open {
             self.locked_note = Some(path);
             self.dispatch(Command::CloseNote, window, cx);
