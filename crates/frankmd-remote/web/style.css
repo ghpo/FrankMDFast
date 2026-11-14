@@ -314,3 +314,133 @@ button.danger { color: var(--error); }
   #overlay { place-items: end center; }
   #toast { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: none; }
 }
+
+/* ---------------------------------------------------------------- visual system */
+html[data-web-theme="dark"] {
+  --bg-primary: #121418;
+  --bg-secondary: #171a20;
+  --bg-tertiary: #20242c;
+  --bg-hover: #2b303a;
+  --text-primary: #eee9ec;
+  --text-secondary: #c9bec8;
+  --text-muted: #91848f;
+  --border: #303540;
+  --accent: #ff9dcc;
+  --accent-hover: #ffb8dc;
+  --accent-text: #351124;
+  --selection: #4a2740;
+  --code-bg: #20242c;
+  --success: #a6e3a1;
+  --warning: #f9e2af;
+  --error: #ff8fa3;
+  --heading-1: #ff9dcc;
+  --heading-2: #d8b4fe;
+  --heading-3: #93c5fd;
+  --folder-icon: #f9e2af;
+  --file-icon: #9cc7ff;
+}
+html[data-web-theme="light"] {
+  --bg-primary: #fffafb;
+  --bg-secondary: #fff4f8;
+  --bg-tertiary: #f8edf3;
+  --bg-hover: #f2e2eb;
+  --text-primary: #2c2530;
+  --text-secondary: #5f5360;
+  --text-muted: #8a7a86;
+  --border: #e6d6e0;
+  --accent: #d94f91;
+  --accent-hover: #bd3f7c;
+  --accent-text: #fff;
+  --selection: #ffd6e7;
+  --code-bg: #f6edf2;
+  --success: #3a8f4c;
+  --warning: #9a6814;
+  --error: #c73554;
+  --heading-1: #b52f6d;
+  --heading-2: #7d3fc4;
+  --heading-3: #1769a8;
+  --folder-icon: #b68119;
+  --file-icon: #367ac1;
+}
+html { color-scheme: light dark; }
+body { transition: background .2s ease, color .2s ease; }
+#topbar {
+  background: linear-gradient(180deg, var(--bg-secondary), color-mix(in srgb, var(--bg-secondary) 88%, var(--accent) 12%));
+  backdrop-filter: blur(12px);
+}
+#crumb { display: flex; align-items: baseline; gap: 2px; }
+.side-brand {
+  display: flex; align-items: center; gap: 11px;
+  padding: 16px 14px 12px;
+}
+.brand-mark {
+  display: grid; place-items: center; flex: 0 0 38px;
+  width: 38px; height: 38px; border-radius: 12px;
+  color: #fff; font-weight: 800; font-size: 18px;
+  background: linear-gradient(135deg, var(--accent), #a855f7);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.brand-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.brand-copy strong { font-size: 14px; letter-spacing: .01em; }
+.brand-copy span { color: var(--text-muted); font-size: 11px; }
+#sidebar { background: color-mix(in srgb, var(--bg-secondary) 94%, var(--accent) 6%); }
+.side-search { padding: 8px 12px 10px; }
+.side-search input { border-radius: 10px; background: var(--bg-tertiary); transition: border-color .15s, box-shadow .15s; }
+.side-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); outline: 0; }
+.tree-row { border-radius: 8px; transition: background .14s ease, color .14s ease, transform .14s ease; }
+.tree-row:hover { transform: translateX(1px); }
+.tree-row.active { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text-primary); box-shadow: inset 3px 0 0 var(--accent); }
+.tree-row .icon svg, .icon svg, .action svg { width: 16px; height: 16px; flex: 0 0 16px; display: block; }
+.tree-row .caret { transition: transform .15s ease; }
+#editor-pane { background: var(--bg-primary); }
+#editor { transition: background .2s ease, color .2s ease; }
+#preview-pane { background: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-secondary) 8%); }
+.markdown-body { transition: color .2s ease; }
+#toast { transition: opacity .18s ease, transform .18s ease; transform: translateY(8px); }
+#toast.show { transform: translateY(0); }
+#overlay-card { animation: card-in .18s ease-out; }
+@keyframes card-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+.sync-spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.icon:focus-visible, .action:focus-visible, .tree-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+@media (max-width: 760px) {
+  .side-brand { padding-top: 12px; }
+  #sidebar { background: var(--bg-secondary); }
+  #topbar { border-bottom-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%); }
+  #sidebar-actions .action { border-radius: 9px; }
+  #btn-mobile-theme { color: var(--text-secondary); }
+}
+
+/* ---------------------------------------------------------------- auth/settings */
+.unlock-form { display: flex; flex-direction: column; gap: 12px; max-width: 440px; margin: 0 auto; }
+.unlock-intro { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.password-field { display: flex; gap: 6px; align-items: center; }
+.password-field input { flex: 1; min-width: 0; }
+.password-reveal { flex: 0 0 38px; width: 38px; height: 38px; border: 1px solid var(--border); background: var(--bg-tertiary); }
+.unlock-error { min-height: 18px; margin: 0; color: var(--error); font-size: 12px; }
+.settings-loading { color: var(--text-muted); padding: 18px 4px; }
+.settings-error { display: flex; flex-direction: column; gap: 10px; color: var(--text-secondary); }
+.settings-error p { margin: 0; }
+@media (max-width: 760px) {
+  .unlock-form { max-width: none; }
+  .unlock-form .settings-actions { flex-direction: column-reverse; }
+  .unlock-form .settings-actions button { width: 100%; }
+}
+
+.settings-section {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 8px; padding: 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-tertiary);
+}
+.settings-section h3 { margin: 0 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+.crypto-status { margin: 0; color: var(--warning); font-size: 13px; }
+.crypto-status.unlocked { color: var(--success); }
+.settings-section .password-field { margin-top: 2px; }
+.settings-section button.primary { align-self: flex-start; }
+@media (max-width: 760px) {
+  .settings-section button.primary { align-self: stretch; width: 100%; }
+}

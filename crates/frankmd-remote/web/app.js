@@ -4,6 +4,7 @@
   const $ = (sel) => document.querySelector(sel);
   const el = (tag, attrs = {}, text) => {
     const node = document.createElement(tag);
+    attrs = attrs || {};
     for (const [key, value] of Object.entries(attrs)) {
       if (key === "class") node.className = value;
       else if (key === "dataset") Object.assign(node.dataset, value);
@@ -33,9 +34,110 @@
     events: null,
   };
 
+  // ---------------------------------------------------------------- web theme + icons
+
+  const WEB_THEME_KEY = "frankmd.webTheme";
+  const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+  const themeModes = ["auto", "light", "dark"];
+  const iconPaths = {
+    menu: "M4 6h16M4 12h16M4 18h16",
+    sync: "M20 11a8 8 0 0 0-14.9-4M4 5v3h3M4 13a8 8 0 0 0 14.9 4M20 19v-3h-3",
+    search: "m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z",
+    plus: "M12 5v14M5 12h14",
+    save: "M5 4h11l3 3v13H5zM8 4v6h8V4M8 20v-6h8v6",
+    preview: "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Zm10 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z",
+    edit: "m4 20 4.5-1 10-10-3.5-3.5-10 10L4 20Zm9.5-13 3.5 3.5",
+    lock: "M6 10V8a6 6 0 0 1 12 0v2m-13 0h14v10H5V10Z",
+    unlock: "M6 10V8a6 6 0 0 1 11-3m-12 5h14v10H5V10Z",
+    folder: "M3 6h6l2 2h10v11H3V6Z",
+    file: "M6 3h8l4 4v14H6V3Zm8 0v5h4",
+    logout: "M10 5H5v14h5m4-4 4-3-4-3m4 3H9",
+    theme: "M12 3v2m0 14v2m9-9h-2M5 12H3m15.36-6.36-1.42 1.42M6.06 17.94l-1.42 1.42m12.72 0-1.42-1.42M6.06 6.06 4.64 4.64M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+    settings: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-3.5a7.4 7.4 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L15 3h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0-.1 1 7.4 7.4 0 0 0 .1 1l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1L11 21h4l.4-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6a7.4 7.4 0 0 0 .1-1Z",
+  };
+
+  function svgIcon(name) {
+    const path = iconPaths[name] || iconPaths.file;
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"></path></svg>`;
+  }
+
+  function iconElement(name) {
+    const span = document.createElement("span");
+    span.className = "icon";
+    span.innerHTML = svgIcon(name);
+    return span;
+  }
+
+  function actionWithIcon(button, name, label) {
+    if (!button) return;
+    button.innerHTML = svgIcon(name) + `<span>${label}</span>`;
+  }
+
+  function hydrateIcons() {
+    const topbar = {
+      "#toggle-sidebar": ["menu", "Toggle explorer"],
+      "#btn-finder": ["search", "Find file"],
+      "#btn-search": ["search", "Search in files"],
+      "#btn-new-note": ["plus", "New note"],
+      "#btn-theme": ["theme", "Change theme"],
+      "#btn-logout": ["logout", "Log out"],
+      "#btn-save": ["save", "Save"],
+      "#btn-preview": ["preview", "Show preview"],
+      "#btn-lock-crypto": ["lock", "Lock encryption"],
+      "#btn-settings": ["settings", "Settings"],
+    };
+    for (const [selector, [name, title]] of Object.entries(topbar)) {
+      const button = $(selector);
+      if (!button) continue;
+      button.innerHTML = svgIcon(name);
+      if (!button.title) button.title = title;
+    }
+    for (const button of document.querySelectorAll("#sidebar-actions [data-icon]")) {
+      if (button.id === "btn-note-crypto") continue;
+      const label = button.textContent.trim();
+      actionWithIcon(button, button.dataset.icon, label);
+    }
+  }
+
+  function webThemeMode() {
+    const value = localStorage.getItem(WEB_THEME_KEY);
+    return themeModes.includes(value) ? value : "auto";
+  }
+
+  function resolvedWebTheme(mode = webThemeMode()) {
+    return mode === "auto" ? (systemTheme.matches ? "dark" : "light") : mode;
+  }
+
+  function applyWebTheme(mode = webThemeMode()) {
+    if (!themeModes.includes(mode)) mode = "auto";
+    localStorage.setItem(WEB_THEME_KEY, mode);
+    const resolved = resolvedWebTheme(mode);
+    document.documentElement.dataset.webTheme = resolved;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = resolved === "dark" ? "#171a20" : "#fff4f8";
+    const button = $("#btn-mobile-theme");
+    if (button) {
+      const label = mode === "auto" ? "Tema automático" : mode === "light" ? "Tema claro" : "Tema escuro";
+      actionWithIcon(button, "theme", label);
+    }
+    const themeButton = $("#btn-theme");
+    if (themeButton) themeButton.title = `Tema: ${mode}`;
+  }
+
+  function cycleWebTheme() {
+    const next = { auto: "light", light: "dark", dark: "auto" }[webThemeMode()] || "auto";
+    applyWebTheme(next);
+    toast(`Tema: ${next}`);
+  }
+
+  systemTheme.addEventListener("change", () => {
+    if (webThemeMode() === "auto") applyWebTheme("auto");
+  });
+
   let previewTimer = null;
   let saveTimer = null;
   let previewSeq = 0;
+  let unlockResolver = null;
 
   // ---------------------------------------------------------------- http
 
@@ -73,24 +175,96 @@
     return data;
   }
 
-  async function unlockEncryption() {
-    const password = window.prompt("Senha da criptografia");
-    if (!password) return false;
-    const res = await fetch("/api/encryption/unlock", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: {
-        "Content-Type": "application/json",
-        "X-FrankMD-CSRF": "1",
-      },
-      body: JSON.stringify({ password }),
+  function unlockEncryption() {
+    return new Promise((resolve) => {
+      if (unlockResolver) {
+        unlockResolver(false);
+        unlockResolver = null;
+      }
+      unlockResolver = resolve;
+      const body = openOverlay("Destravar criptografia");
+      const form = el("form", { class: "unlock-form" });
+      const intro = el(
+        "p",
+        { class: "unlock-intro" },
+        "Digite a senha do cofre para acessar o conteúdo cifrado.",
+      );
+      const field = el("div", { class: "password-field" });
+      const input = el("input", {
+        type: "password",
+        placeholder: "Senha da criptografia",
+        autocomplete: "current-password",
+        "aria-label": "Senha da criptografia",
+        spellcheck: "false",
+      });
+      const reveal = el("button", {
+        type: "button",
+        class: "icon password-reveal",
+        "aria-label": "Mostrar senha",
+        title: "Mostrar senha",
+      }, "◉");
+      const error = el("p", { class: "unlock-error", role: "alert" });
+
+    const actions = el("div", { class: "settings-actions" });
+      const cancel = el("button", { type: "button" }, "Cancelar");
+      const submit = el("button", { type: "submit", class: "primary" }, "Destravar");
+      const finish = (value) => {
+        if (!unlockResolver) return;
+        const resolveFn = unlockResolver;
+        unlockResolver = null;
+        closeOverlay();
+        resolveFn(value);
+      };
+      reveal.addEventListener("click", () => {
+        const showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        reveal.textContent = showing ? "◉" : "◌";
+        reveal.title = showing ? "Mostrar senha" : "Ocultar senha";
+        reveal.setAttribute("aria-label", reveal.title);
+      });
+      cancel.addEventListener("click", () => finish(false));
+      form.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const password = input.value;
+        if (!password) {
+          error.textContent = "Digite a senha.";
+          input.focus();
+          return;
+        }
+        submit.disabled = true;
+        submit.textContent = "Destravando…";
+        error.textContent = "";
+        try {
+          const res = await fetch("/api/encryption/unlock", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json",
+              "X-FrankMD-CSRF": "1",
+            },
+            body: JSON.stringify({ password }),
+          });
+          if (!res.ok) {
+            error.textContent = "Senha incorreta. Tente novamente.";
+            submit.disabled = false;
+            submit.textContent = "Destravar";
+            input.select();
+            return;
+          }
+          toast("Criptografia destravada");
+          finish(true);
+        } catch (err) {
+          error.textContent = err.message || "Falha ao destravar";
+          submit.disabled = false;
+          submit.textContent = "Destravar";
+        }
+      });
+      field.append(input, reveal);
+      actions.append(cancel, submit);
+      form.append(intro, field, error, actions);
+      body.replaceChildren(form);
+      input.focus();
     });
-    if (!res.ok) {
-      toast("Senha incorreta", "error");
-      return false;
-    }
-    toast("Criptografia destravada");
-    return true;
   }
 
   async function lockEncryption() {
@@ -169,7 +343,7 @@
       "#toggle-sidebar": ["header.toggle_explorer", "Toggle Explorer"],
       "#btn-finder": ["sidebar.find_file", "Find File"],
       "#btn-search": ["sidebar.search_in_files", "Search in Files"],
-      "#btn-new-note": ["sidebar.new_note", "New Note"],
+      "#btn-new-note": ["sidebar.new_note", "New Note (Alt+N)"],
       "#btn-ai": ["dialogs.ai_services", "AI: fix grammar"],
       "#btn-ai-image": ["dialogs.ai_image", "AI: generate image"],
       "#btn-theme": ["header.change_theme", "Change Theme"],
@@ -282,7 +456,7 @@
       const wrap = el("div", { class: "tree-folder" });
       const row = el("button", { class: "tree-row folder", style: `padding-left:${8 + depth * 14}px` });
       const caret = el("span", { class: "caret" }, state.expanded.has(node.path) ? "▾" : "▸");
-      row.append(caret, el("span", { class: "icon" }, "▣"), el("span", { class: "label" }, node.name));
+      row.append(caret, iconElement("folder"), el("span", { class: "label" }, node.name));
       row.addEventListener("click", () => {
         if (state.expanded.has(node.path)) state.expanded.delete(node.path);
         else state.expanded.add(node.path);
@@ -309,7 +483,7 @@
     const row = el("button", { class: "tree-row file", style: `padding-left:${8 + depth * 14}px` });
     row.dataset.path = node.path;
     if (node.path === state.openPath) row.classList.add("active");
-    row.append(el("span", { class: "icon" }, "▤"), el("span", { class: "label" }, node.name));
+    row.append(iconElement(node.encrypted ? "lock" : "file"), el("span", { class: "label" }, node.name));
     row.addEventListener("click", () => {
       openNote(node.path);
       closeSidebar();
@@ -397,9 +571,11 @@
     if (!button) return;
     button.disabled = !state.openPath;
     button.title = state.encrypted ? "Descriptografar nota" : "Criptografar nota";
-    button.textContent = state.encrypted
-      ? "🔓 Descriptografar nota"
-      : "🔒 Criptografar nota";
+    actionWithIcon(
+      button,
+      state.encrypted ? "unlock" : "lock",
+      state.encrypted ? "Descriptografar nota" : "Criptografar nota",
+    );
   }
 
   async function toggleNoteEncryption() {
@@ -586,7 +762,14 @@
     $("#overlay").classList.remove("hidden");
     return $("#overlay-body");
   }
-  function closeOverlay() { $("#overlay").classList.add("hidden"); }
+  function closeOverlay() {
+    $("#overlay").classList.add("hidden");
+    if (unlockResolver) {
+      const resolveFn = unlockResolver;
+      unlockResolver = null;
+      resolveFn(false);
+    }
+  }
 
   // ---------------------------------------------------------------- finder
 
@@ -671,12 +854,36 @@
 
   // ---------------------------------------------------------------- settings
 
+  function settingsError(body, message) {
+    body.replaceChildren();
+    const error = el("div", { class: "settings-error" });
+    error.appendChild(el("p", null, `Não foi possível carregar as configurações: ${message}`));
+    const retry = el("button", { type: "button", class: "primary" }, "Tentar novamente");
+    retry.addEventListener("click", openSettings);
+    const close = el("button", { type: "button" }, "Fechar");
+    close.addEventListener("click", closeOverlay);
+    const actions = el("div", { class: "settings-actions" });
+    actions.append(retry, close);
+    error.appendChild(actions);
+    body.appendChild(error);
+  }
+
   async function openSettings() {
-    let config;
-    try { config = await api("/api/config"); } catch (err) { toast(err.message, "error"); return; }
-    const settings = config.settings || {};
     const body = openOverlay(t("settings.title", "Settings"));
-    const form = el("form", { class: "settings-form" });
+    body.appendChild(el("p", { class: "settings-loading" }, "Carregando configurações…"));
+    let config;
+    try {
+      config = await api("/api/config");
+    } catch (err) {
+      settingsError(body, err.message);
+      return;
+    }
+    const settings = config.settings || {};
+    let encryption = { configured: false, unlocked: false };
+    try { encryption = await api("/api/encryption"); } catch { /* status unavailable */ }
+    body.replaceChildren();
+    try {
+      const form = el("form", { class: "settings-form" });
 
     const field = (label, control) => {
       const row = el("label", { class: "settings-row" });
@@ -697,17 +904,17 @@
       input.dataset.type = "int";
       return field(label, input);
     };
-    const select = (name, label, options) => {
+    const select = (name, label, options, type = "str") => {
       const input = el("select");
       for (const [value, text] of options) input.appendChild(el("option", { value }, text));
-      input.value = settings[name] ?? options[0][0];
+      input.value = String(settings[name] ?? options[0][0]);
       input.dataset.key = name;
-      input.dataset.type = "str";
+      input.dataset.type = type;
       return field(label, input);
     };
 
     const themeOptions = [
-      ...state.themeList.map((id) => [id, id]),
+      ...(Array.isArray(state.themeList) ? state.themeList : []).map((id) => [id, id]),
       ["omarchy", "omarchy"],
       ["custom", "custom"],
     ];
@@ -722,14 +929,115 @@
 
     form.appendChild(number("editor_font_size", "Editor font size", 8, 48));
     form.appendChild(number("preview_zoom", "Preview zoom (%)", 50, 250));
-    form.appendChild(number("editor_width", "Editor width (px)", 400, 2400));
+    form.appendChild(number("editor_width", "Editor width (ch)", 40, 200));
     form.appendChild(number("editor_indent", "Indent width", 1, 12));
     form.appendChild(checkbox("vim_mode", "Vim mode"));
-    form.appendChild(checkbox("editor_line_numbers", "Line numbers"));
+    form.appendChild(select(
+      "editor_line_numbers",
+      "Line numbers",
+      [["0", "Desligado"], ["1", "Absoluto"]],
+      "int",
+    ));
     form.appendChild(checkbox("scroll_sync", "Synchronized scrolling"));
     form.appendChild(checkbox("typewriter_mode", "Typewriter mode"));
     form.appendChild(checkbox("show_stats", "Show document stats"));
     form.appendChild(checkbox("sidebar_visible", "Show explorer"));
+
+      const cryptoBox = el("section", { class: "settings-section" });
+    const renderCrypto = (status) => {
+      cryptoBox.replaceChildren();
+      cryptoBox.appendChild(el("h3", null, "Criptografia"));
+      const line = el("p", { class: "crypto-status" });
+      if (!status.configured) {
+        line.textContent = "Sem seal importado. Importe o seal no app desktop.";
+        cryptoBox.appendChild(line);
+        return;
+      }
+      line.textContent = status.unlocked ? "Criptografia destravada" : "Criptografia bloqueada";
+      line.classList.toggle("unlocked", !!status.unlocked);
+      cryptoBox.appendChild(line);
+      if (status.unlocked) {
+        const lock = el("button", { type: "button", class: "primary" }, "Bloquear criptografia");
+        lock.addEventListener("click", async () => {
+          lock.disabled = true;
+          try {
+            await fetch("/api/encryption/lock", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "X-FrankMD-CSRF": "1" },
+            });
+            renderCrypto({ configured: true, unlocked: false });
+            toast("Criptografia bloqueada");
+          } catch (err) {
+            toast(err.message, "error");
+            lock.disabled = false;
+          }
+        });
+        cryptoBox.appendChild(lock);
+        return;
+      }
+      const passwordField = el("div", { class: "password-field" });
+      const password = el("input", {
+        type: "password",
+        placeholder: "Senha da criptografia",
+        autocomplete: "current-password",
+        "aria-label": "Senha da criptografia",
+        spellcheck: "false",
+      });
+      const reveal = el("button", {
+        type: "button",
+        class: "icon password-reveal",
+        title: "Mostrar senha",
+        "aria-label": "Mostrar senha",
+      }, "◉");
+      reveal.addEventListener("click", () => {
+        const showing = password.type === "text";
+        password.type = showing ? "password" : "text";
+        reveal.textContent = showing ? "◉" : "◌";
+        reveal.title = showing ? "Mostrar senha" : "Ocultar senha";
+        reveal.setAttribute("aria-label", reveal.title);
+      });
+      passwordField.append(password, reveal);
+      const error = el("p", { class: "unlock-error", role: "alert" });
+      const unlock = el("button", { type: "button", class: "primary" }, "Desbloquear criptografia");
+      unlock.addEventListener("click", async () => {
+        if (!password.value) {
+          error.textContent = "Digite a senha.";
+          password.focus();
+          return;
+        }
+        unlock.disabled = true;
+        unlock.textContent = "Desbloqueando…";
+        error.textContent = "";
+        try {
+          const response = await fetch("/api/encryption/unlock", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json",
+              "X-FrankMD-CSRF": "1",
+            },
+            body: JSON.stringify({ password: password.value }),
+          });
+          if (!response.ok) {
+            error.textContent = "Senha incorreta. Tente novamente.";
+            unlock.disabled = false;
+            unlock.textContent = "Desbloquear criptografia";
+            password.select();
+            return;
+          }
+          renderCrypto({ configured: true, unlocked: true });
+          toast("Criptografia destravada");
+        } catch (err) {
+          error.textContent = err.message || "Falha ao desbloquear";
+          unlock.disabled = false;
+          unlock.textContent = "Desbloquear criptografia";
+        }
+      });
+      cryptoBox.append(passwordField, error, unlock);
+    };
+    renderCrypto(encryption);
+    form.appendChild(cryptoBox);
 
     const actions = el("div", { class: "settings-actions" });
     const save = el("button", { type: "submit", class: "primary" }, t("common.save", "Save"));
@@ -756,7 +1064,11 @@
       } catch (err) { toast(err.message, "error"); }
     });
 
-    body.appendChild(form);
+      body.appendChild(form);
+    } catch (err) {
+      console.error("settings render failed", err);
+      settingsError(body, err.message || "erro ao montar o formulário");
+    }
   }
 
   // ---------------------------------------------------------------- media
@@ -953,13 +1265,18 @@
       newNote("");
     });
     $("#btn-mobile-lock").addEventListener("click", lockEncryption);
+    $("#btn-mobile-settings").addEventListener("click", () => {
+      closeSidebar();
+      openSettings();
+    });
     $("#btn-mobile-logout").addEventListener("click", logout);
     $("#btn-finder").addEventListener("click", openFinder);
     $("#btn-search").addEventListener("click", openSearch);
     $("#btn-new-note").addEventListener("click", () => newNote(""));
     $("#btn-ai").addEventListener("click", fixGrammar);
     $("#btn-ai-image").addEventListener("click", generateImage);
-    $("#btn-theme").addEventListener("click", cycleTheme);
+    $("#btn-theme").addEventListener("click", cycleWebTheme);
+    $("#btn-mobile-theme").addEventListener("click", cycleWebTheme);
     $("#btn-settings").addEventListener("click", openSettings);
     $("#btn-library").addEventListener("click", openLibrary);
     $("#btn-lock-crypto").addEventListener("click", lockEncryption);
@@ -978,6 +1295,20 @@
     document.addEventListener("touchmove", (ev) => {
       if (ev.touches.length > 1) ev.preventDefault();
     }, { passive: false });
+    // Capture phase gives Ctrl+N the best chance before the browser's
+    // reserved shortcut. Alt+N is the reliable fallback on all browsers.
+    document.addEventListener("keydown", (ev) => {
+      const mod = ev.ctrlKey || ev.metaKey;
+      if (ev.altKey && ev.key.toLowerCase() === "n") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        newNote("");
+      } else if (mod && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === "n") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        newNote("");
+      }
+    }, true);
     document.addEventListener("keydown", (ev) => {
       const mod = ev.ctrlKey || ev.metaKey;
       if (mod && ev.key.toLowerCase() === "p") { ev.preventDefault(); openFinder(); }
@@ -993,6 +1324,8 @@
 
   async function boot() {
     bind();
+    hydrateIcons();
+    applyWebTheme();
     await loadTranslations();
     applyStaticTranslations();
     await loadSettings();

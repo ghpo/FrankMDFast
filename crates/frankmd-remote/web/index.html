@@ -23,7 +23,7 @@
     <button id="btn-preview" class="icon mobile-only" title="Show preview">◉</button>
     <button id="btn-finder" class="icon desktop-only" title="Find file (Ctrl+P)">⌕</button>
     <button id="btn-search" class="icon desktop-only" title="Search in files (Ctrl+Shift+F)">⌕⁺</button>
-    <button id="btn-new-note" class="icon desktop-only" title="New note (Ctrl+N)">＋</button>
+    <button id="btn-new-note" class="icon desktop-only" title="New note (Alt+N)">＋</button>
     <button id="btn-ai" class="icon desktop-only" title="Fix grammar with AI">✎</button>
     <button id="btn-ai-image" class="icon desktop-only" title="Generate an image with AI">✦</button>
     <button id="btn-theme" class="icon desktop-only" title="Theme">◐</button>
@@ -36,6 +36,13 @@
   <div id="layout">
     <div id="sidebar-backdrop" class="hidden"></div>
     <aside id="sidebar">
+      <div class="side-brand">
+        <div class="brand-mark">F</div>
+        <div class="brand-copy">
+          <strong>FrankMDFast</strong>
+          <span>notas offline + sync</span>
+        </div>
+      </div>
       <div class="side-search">
         <input id="filter" type="search" placeholder="Filter notes…" autocomplete="off">
       </div>
@@ -45,10 +52,12 @@
         <ul id="recent"></ul>
       </div>
       <div id="sidebar-actions">
-        <button id="btn-mobile-new" class="action">＋ Nova nota</button>
-        <button id="btn-note-crypto" class="action" title="Encrypt note">🔒 Criptografar nota</button>
-        <button id="btn-mobile-lock" class="action">⚿ Bloquear conteúdo</button>
-        <button id="btn-mobile-logout" class="action danger">⏻ Sair</button>
+        <button id="btn-mobile-new" class="action" data-icon="plus">Nova nota</button>
+        <button id="btn-note-crypto" class="action" data-icon="lock" title="Encrypt note">Criptografar nota</button>
+        <button id="btn-mobile-lock" class="action" data-icon="lock">Bloquear criptografia</button>
+        <button id="btn-mobile-settings" class="action" data-icon="settings">Configurações</button>
+        <button id="btn-mobile-theme" class="action" data-icon="theme">Tema automático</button>
+        <button id="btn-mobile-logout" class="action danger" data-icon="logout">Sair</button>
       </div>
     </aside>
 
