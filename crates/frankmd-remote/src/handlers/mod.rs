@@ -7,6 +7,7 @@ pub mod events;
 pub mod media;
 pub mod notes;
 pub mod search;
+pub mod sync;
 
 use std::sync::Arc;
 

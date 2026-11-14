@@ -38,6 +38,13 @@ pub fn build_router(state: Arc<ServerState>) -> Router {
         .route("/api/encryption/unlock", post(handlers::encryption::unlock))
         .route("/api/encryption/lock", post(handlers::encryption::lock))
         .route("/api/tree", get(handlers::notes::tree))
+        .route("/api/sync/manifest", get(handlers::sync::manifest))
+        .route(
+            "/api/sync/file",
+            get(handlers::sync::get_file)
+                .put(handlers::sync::put_file)
+                .delete(handlers::sync::delete_file),
+        )
         .route(
             "/api/note",
             get(handlers::notes::get_note)

@@ -21,6 +21,17 @@ pub(crate) enum Splitter {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.sync_rescan_pending {
+            self.sync_rescan_pending = false;
+            self.dispatch(
+                frankmd_workspace::Command::External(frankmd_watch::WatchEvent::VaultChanged {
+                    paths: Vec::new(),
+                    removed: Vec::new(),
+                }),
+                window,
+                cx,
+            );
+        }
         let width = f32::from(window.viewport_size().width);
         if (width - self.width).abs() > f32::EPSILON {
             self.on_width(width, window, cx);

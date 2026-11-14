@@ -29,6 +29,19 @@ pub enum TrashBackend {
     Directory(PathBuf),
 }
 
+/// A file entry for the remote sync protocol.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncEntry {
+    /// Vault-relative path.
+    pub path: String,
+    /// SHA-256 revision of the raw file bytes.
+    pub revision: String,
+    /// Size in bytes.
+    pub size: u64,
+    /// Modification time, whole seconds.
+    pub mtime: i64,
+}
+
 /// An opened notes root. Cheap to clone; holds no file handles.
 #[derive(Debug, Clone)]
 pub struct Vault {
@@ -279,6 +292,101 @@ impl Vault {
         };
         atomic::atomic_replace(&path.abs, &bytes, ModePolicy::Preserve)?;
         Ok(Revision::of(&bytes))
+    }
+
+    /// The tree (folders first, then notes).
+    /// Every non-hidden regular file, for the remote sync protocol. Raw
+    /// encrypted envelopes are included as-is; `.fed`, app locks and hidden
+    /// folders are excluded.
+    pub fn sync_manifest(&self) -> Result<Vec<SyncEntry>, FsError> {
+        let mut out = Vec::new();
+        self.sync_walk(&self.real_root, &mut out)?;
+        out.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(out)
+    }
+
+    /// Read raw bytes for sync (never decrypts).
+    pub fn sync_read(&self, path: &str) -> Result<Vec<u8>, FsError> {
+        let contained = self.safe_path(path, true)?;
+        Ok(fs::read(contained.abs())?)
+    }
+
+    /// Write raw bytes for sync. `expected_revision` is a SHA-256 hex string;
+    /// when present the current raw revision must match.
+    pub fn sync_write(
+        &self,
+        path: &str,
+        bytes: &[u8],
+        expected_revision: Option<&str>,
+    ) -> Result<Revision, FsError> {
+        let contained = self.safe_path(path, false)?;
+        if let Some(expected) = expected_revision {
+            if let Ok(current) = fs::read(contained.abs()) {
+                if Revision::of(&current).0 != expected {
+                    return Err(FsError::RevisionConflict(path.to_owned()));
+                }
+            } else {
+                return Err(FsError::NotFound(format!("Note not found: {path}")));
+            }
+        }
+        let _lock = self.lock(FILESYSTEM_LOCK, LockKind::Exclusive)?;
+        if let Some(parent) = contained.abs().parent() {
+            fs::create_dir_all(parent)?;
+        }
+        atomic::atomic_replace(contained.abs(), bytes, ModePolicy::Preserve)?;
+        Ok(Revision::of(bytes))
+    }
+
+    /// Delete a raw sync file, guarded by its current revision.
+    pub fn sync_delete(&self, path: &str, expected_revision: Option<&str>) -> Result<(), FsError> {
+        let full = self.trash_path(path)?;
+        self.trash_locked(&full, expected_revision, path)
+    }
+
+    fn sync_walk(&self, dir: &Path, out: &mut Vec<SyncEntry>) -> Result<(), FsError> {
+        let reading = match fs::read_dir(dir) {
+            Ok(reading) => reading,
+            Err(e) if is_gone(&e) => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+        for entry in reading {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) if is_gone(&e) => continue,
+                Err(e) => return Err(e.into()),
+            };
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let meta = match fs::symlink_metadata(entry.path()) {
+                Ok(meta) => meta,
+                Err(e) if is_gone(&e) => continue,
+                Err(e) => return Err(e.into()),
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                self.sync_walk(&entry.path(), out)?;
+                continue;
+            }
+            let Some(rel) = self.rel_of(&entry.path()) else {
+                continue;
+            };
+            let bytes = match fs::read(entry.path()) {
+                Ok(bytes) => bytes,
+                Err(e) if is_gone(&e) => continue,
+                Err(e) => return Err(e.into()),
+            };
+            out.push(SyncEntry {
+                path: rel.as_str().to_owned(),
+                revision: Revision::of(&bytes).0,
+                size: meta.len(),
+                mtime: crate::meta::mtime_secs(&meta),
+            });
+        }
+        Ok(())
     }
 
     /// The tree (folders first, then notes).
@@ -621,9 +729,14 @@ impl Vault {
             }
         }
         match &self.trash {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             TrashBackend::System => trash::delete(&path.abs).map_err(|e| {
                 FsError::Io(io::Error::other(format!("could not move to trash: {e}")))
             }),
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            TrashBackend::System => Err(FsError::Io(io::Error::other(
+                "system trash is unavailable on mobile; use a trash directory",
+            ))),
             TrashBackend::Directory(dir) => {
                 fs::create_dir_all(dir)?;
                 let name = path

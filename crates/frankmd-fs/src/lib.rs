@@ -48,4 +48,4 @@ pub mod vault;
 pub use error::FsError;
 pub use recent::{RecentFilesService, RecentStore};
 pub use service::NotesService;
-pub use vault::{ContainedPath, NoteFile, TrashBackend, Vault};
+pub use vault::{ContainedPath, NoteFile, SyncEntry, TrashBackend, Vault};

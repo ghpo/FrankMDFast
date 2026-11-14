@@ -54,6 +54,7 @@ winresource = "0.1.34"
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
+wiremock.workspace = true
 
 [lints]
 workspace = true

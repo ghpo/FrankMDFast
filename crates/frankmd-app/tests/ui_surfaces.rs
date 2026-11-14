@@ -142,6 +142,20 @@ fn global_shortcuts_are_disabled_inside_settings(cx: &mut TestAppContext) {
     assert!(!shell.layout(cx).zen);
 }
 
+// §5.16: the Sync category selects the destination server and exposes its
+// controls without a static placeholder page.
+#[gpui_kit::test]
+fn settings_sync_panel_exposes_server_controls(cx: &mut TestAppContext) {
+    let shell = open_shell(cx, WIDE, VaultFixture::sample());
+    harness::press(cx, shell.window, "ctrl-,");
+    click(cx, &shell, "settings-category-sync");
+    assert!(harness::is_shown(cx, shell.window, "settings-sync"));
+    assert!(harness::is_shown(cx, shell.window, "settings-sync-server"));
+    assert!(harness::is_shown(cx, shell.window, "settings-sync-token"));
+    assert!(harness::is_shown(cx, shell.window, "settings-sync-auto"));
+    assert!(harness::is_shown(cx, shell.window, "settings-sync-run"));
+}
+
 // §5.16: a switch row writes its key to `.fed` and applies live.
 #[gpui_kit::test]
 fn settings_switch_writes_fed(cx: &mut TestAppContext) {

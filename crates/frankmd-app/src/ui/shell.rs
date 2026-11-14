@@ -31,6 +31,8 @@ use frankmd_workspace::{Command, Effect, Event, Workspace};
 use gpui_kit::component::input::InputState;
 use gpui_kit::*;
 
+use crate::dialogs::media::task::Abort;
+
 use super::appearance::{self, ResolvedTheme};
 use super::editor_host::EditorHost;
 use super::i18n;
@@ -184,6 +186,15 @@ pub struct Shell {
     pub(crate) palette: PaletteState,
     pub(crate) quick_open: QuickOpenState,
     pub(crate) settings: SettingsState,
+    /// Per-vault desktop sync connection and revision base.
+    pub(crate) sync: crate::sync::SyncStore,
+    /// Latest sync status shown in Settings.
+    pub(crate) sync_status: Option<(SharedString, bool)>,
+    /// The running sync task and its network abort guard.
+    pub(crate) sync_task: Option<Task<()>>,
+    pub(crate) sync_abort: Option<Abort>,
+    /// The next render must rescan the vault after synced files changed.
+    pub(crate) sync_rescan_pending: bool,
     /// Local attachments of the current note (paperclip dialog).
     pub(crate) attachments: Option<super::attachments::AttachmentsState>,
     /// An encrypted attachment waiting for the vault unlock.
@@ -332,6 +343,11 @@ impl Shell {
                 input: qo_input,
             },
             settings,
+            sync: crate::sync::SyncStore::open(&config.state_dir),
+            sync_status: None,
+            sync_task: None,
+            sync_abort: None,
+            sync_rescan_pending: false,
             attachments: None,
             pending_attachment: None,
             attachment_jobs: Vec::new(),
@@ -403,6 +419,9 @@ impl Shell {
         shell.refresh_quick_open(cx);
         shell.open_initial(config.open.as_deref(), window, cx);
         shell.update_title(window);
+        if shell.sync.auto() && shell.sync.configured() {
+            shell.start_sync(window, cx);
+        }
         shell
     }
 

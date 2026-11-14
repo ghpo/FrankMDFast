@@ -39,6 +39,7 @@ pub(crate) enum Category {
     Media,
     Integrations,
     Remote,
+    Sync,
     Encryption,
     Hugo,
     Diagnostics,
@@ -46,7 +47,7 @@ pub(crate) enum Category {
 }
 
 impl Category {
-    const ALL: [Category; 12] = [
+    const ALL: [Category; 13] = [
         Self::Appearance,
         Self::Editor,
         Self::Writing,
@@ -55,6 +56,7 @@ impl Category {
         Self::Media,
         Self::Integrations,
         Self::Remote,
+        Self::Sync,
         Self::Encryption,
         Self::Hugo,
         Self::Diagnostics,
@@ -71,6 +73,7 @@ impl Category {
             Self::Media => "media",
             Self::Integrations => "integrations",
             Self::Remote => "remote",
+            Self::Sync => "sync",
             Self::Encryption => "encryption",
             Self::Hugo => "hugo",
             Self::Diagnostics => "diagnostics",
@@ -520,6 +523,10 @@ pub(crate) struct SettingsState {
     remote_port: Option<Entity<InputState>>,
     /// Access-token input (Settings › Remote).
     remote_token: Option<Entity<InputState>>,
+    /// Destination server URL (Settings › Sync).
+    sync_server: Option<Entity<InputState>>,
+    /// Destination server token (Settings › Sync).
+    sync_token: Option<Entity<InputState>>,
     /// Encryption password input.
     encryption_password: Option<Entity<InputState>>,
     /// Encryption confirmation input.
@@ -563,6 +570,8 @@ impl SettingsState {
                 inputs: Default::default(),
                 remote_port: None,
                 remote_token: None,
+                sync_server: None,
+                sync_token: None,
                 encryption_password: None,
                 encryption_confirm: None,
                 encryption_backup: None,
@@ -895,6 +904,12 @@ impl Shell {
                     .into_any_element(),
             );
         }
+        if query.is_empty() && self.settings.category == Category::Sync {
+            body.push(
+                self.render_sync_panel(&theme, window, cx)
+                    .into_any_element(),
+            );
+        }
         if query.is_empty() && self.settings.category == Category::Encryption {
             body.push(
                 self.render_encryption_panel(&theme, window, cx)
@@ -981,6 +996,329 @@ impl Shell {
                             .children(body),
                     ),
             )
+    }
+
+    /// Settings › Sync: save the destination server and token for this vault.
+    pub(crate) fn save_sync_settings(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let server = self
+            .settings
+            .sync_server
+            .as_ref()
+            .map(|input| input.read(cx).value().to_string())
+            .unwrap_or_default();
+        let token = self
+            .settings
+            .sync_token
+            .as_ref()
+            .map(|input| input.read(cx).value().trim().to_owned())
+            .unwrap_or_default();
+        let token = (!token.is_empty()).then_some(token.as_str());
+        let result = self.sync.set_connection(&server, token);
+        match result {
+            Ok(()) => {
+                if let Some(input) = self.settings.sync_token.clone() {
+                    let placeholder = i18n::t(cx, "settings_sheet.sync.token_configured");
+                    input.update(cx, |state, cx| {
+                        state.set_value("", window, cx);
+                        state.set_placeholder(placeholder, window, cx);
+                    });
+                }
+                let message = i18n::t(cx, "settings_sheet.sync.saved");
+                self.sync_status = Some((message.clone(), false));
+                self.show_message(&message, false, cx);
+                cx.notify();
+                true
+            }
+            Err(err) => {
+                let message = i18n::t_args(
+                    cx,
+                    "settings_sheet.sync.failed",
+                    &[("error", &format!("{err:#}"))],
+                );
+                self.sync_status = Some((message.clone(), true));
+                self.show_message(&message, true, cx);
+                cx.notify();
+                false
+            }
+        }
+    }
+
+    /// Settings › Sync: start one background sync pass.
+    pub(crate) fn start_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.sync_task.is_some() {
+            return;
+        }
+        let Some(core) = self.core.as_ref() else {
+            let message = i18n::t(cx, "settings_sheet.remote.vault_unavailable");
+            self.sync_status = Some((message.clone(), true));
+            self.show_message(&message, true, cx);
+            return;
+        };
+        if !self.sync.configured() {
+            let message = i18n::t(cx, "settings_sheet.sync.not_configured");
+            self.sync_status = Some((message.clone(), true));
+            self.show_message(&message, true, cx);
+            return;
+        }
+        let vault = core.vault.clone();
+        let open_doc = core.ws.open_doc().map(|doc| doc.id);
+        if let Some(doc) = open_doc {
+            self.dispatch(Command::SaveNow { doc }, window, cx);
+        }
+
+        let server = self.sync.server_url().to_owned();
+        let token = self.sync.token().to_owned();
+        let base = self.sync.base();
+        let running = i18n::t(cx, "settings_sheet.sync.running");
+        self.sync_status = Some((running, false));
+        let (abort, work) = spawn_net(cx, async move {
+            crate::sync::run(vault, &server, &token, base).await
+        });
+        self.sync_abort = abort;
+        self.sync_task = Some(cx.spawn(async move |this, cx| {
+            let result = work.await;
+            let _ = this.update(cx, |shell, cx| shell.finish_sync(result, cx));
+        }));
+        cx.notify();
+    }
+
+    fn finish_sync(
+        &mut self,
+        result: Option<anyhow::Result<crate::sync::SyncOutcome>>,
+        cx: &mut Context<Self>,
+    ) {
+        self.sync_task = None;
+        self.sync_abort = None;
+        match result {
+            Some(Ok(outcome)) => {
+                self.sync.save_base_for(&outcome.server, outcome.base);
+                let downloaded = outcome.downloaded.to_string();
+                let uploaded = outcome.uploaded.to_string();
+                let deleted = outcome.deleted.to_string();
+                let conflicts = outcome.conflicts.to_string();
+                let message = i18n::t_args(
+                    cx,
+                    "settings_sheet.sync.result",
+                    &[
+                        ("downloaded", &downloaded),
+                        ("uploaded", &uploaded),
+                        ("deleted", &deleted),
+                        ("conflicts", &conflicts),
+                    ],
+                );
+                self.sync_status = Some((message.clone(), false));
+                self.sync_rescan_pending = true;
+                self.show_message(&message, false, cx);
+            }
+            Some(Err(err)) => {
+                let error = format!("{err:#}");
+                let message = i18n::t_args(cx, "settings_sheet.sync.failed", &[("error", &error)]);
+                self.sync_status = Some((message.clone(), true));
+                self.show_message(&message, true, cx);
+            }
+            None => {
+                let message = i18n::t(cx, "settings_sheet.sync.failed");
+                self.sync_status = Some((message.clone(), true));
+                self.show_message(&message, true, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Settings › Sync: persist the launch-sync preference.
+    pub(crate) fn set_sync_auto(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.sync.set_auto(enabled);
+        cx.notify();
+    }
+
+    /// Settings › Sync: select the remote server this vault synchronizes with.
+    fn render_sync_panel(
+        &mut self,
+        theme: &gpui_kit::component::theme::Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let title = |text: SharedString| div().text_sm().font_semibold().child(text);
+        let paragraph = |text: SharedString| {
+            div()
+                .w_full()
+                .min_w_0()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(text)
+        };
+
+        if self.settings.sync_server.is_none() {
+            let input = cx.new(|cx| {
+                InputState::new(window, cx).default_value(self.sync.server_url().to_owned())
+            });
+            self.settings.sync_server = Some(input);
+        }
+        let server_input = self.settings.sync_server.clone().expect("created above");
+
+        if self.settings.sync_token.is_none() {
+            let placeholder = if self.sync.token().is_empty() {
+                i18n::t(cx, "settings_sheet.sync.token_placeholder")
+            } else {
+                i18n::t(cx, "settings_sheet.sync.token_configured")
+            };
+            let input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .masked(true)
+                    .placeholder(placeholder)
+            });
+            self.settings.sync_token = Some(input);
+        }
+        let token_input = self.settings.sync_token.clone().expect("created above");
+
+        let running = self.sync_task.is_some();
+        let configured = self.sync.configured();
+        let auto = self.sync.auto();
+
+        let save_this = cx.entity().downgrade();
+        let save = Button::new("settings-sync-save")
+            .small()
+            .outline()
+            .label(i18n::t(cx, "settings_sheet.sync.save"))
+            .on_click(move |_, window, cx| {
+                let _ = save_this.update(cx, |shell, cx| {
+                    shell.save_sync_settings(window, cx);
+                });
+            });
+
+        let run_this = cx.entity().downgrade();
+        let run = Button::new("settings-sync-run")
+            .small()
+            .primary()
+            .disabled(running)
+            .label(if running {
+                i18n::t(cx, "settings_sheet.sync.running")
+            } else {
+                i18n::t(cx, "settings_sheet.sync.sync_now")
+            })
+            .on_click(move |_, window, cx| {
+                let _ = run_this.update(cx, |shell, cx| {
+                    if shell.save_sync_settings(window, cx) {
+                        shell.start_sync(window, cx);
+                    }
+                });
+            });
+
+        let auto_this = cx.entity().downgrade();
+        let auto_switch =
+            Switch::new("settings-sync-auto")
+                .checked(auto)
+                .on_click(move |checked, _, cx| {
+                    let enabled = *checked;
+                    let _ = auto_this.update(cx, |shell, cx| shell.set_sync_auto(enabled, cx));
+                });
+
+        let (status_text, status_color) = match &self.sync_status {
+            Some((text, true)) => (text.clone(), theme.danger),
+            Some((text, false)) => (text.clone(), theme.success),
+            None if configured => (
+                i18n::t(cx, "settings_sheet.sync.ready"),
+                theme.muted_foreground,
+            ),
+            None => (
+                i18n::t(cx, "settings_sheet.sync.not_configured"),
+                theme.warning,
+            ),
+        };
+
+        v_flex()
+            .id("settings-sync")
+            .test_support()
+            .w_full()
+            .min_w_0()
+            .gap_3()
+            .pt_1()
+            .child(title(i18n::t(cx, "settings_sheet.sync.title")))
+            .child(paragraph(i18n::t(cx, "settings_sheet.sync.intro")))
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_3()
+                    .items_center()
+                    .child(
+                        div()
+                            .w(px(150.))
+                            .text_sm()
+                            .child(i18n::t(cx, "settings_sheet.sync.server")),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(Input::new(&server_input).id("settings-sync-server")),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_3()
+                    .items_center()
+                    .child(
+                        div()
+                            .w(px(150.))
+                            .text_sm()
+                            .child(i18n::t(cx, "settings_sheet.sync.token")),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(Input::new(&token_input).id("settings-sync-token")),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(i18n::t(cx, "settings_sheet.sync.token_hint")),
+            )
+            .child(
+                h_flex()
+                    .gap_3()
+                    .items_center()
+                    .flex_wrap()
+                    .child(auto_switch)
+                    .child(
+                        div()
+                            .text_sm()
+                            .child(i18n::t(cx, "settings_sheet.sync.auto")),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(i18n::t(cx, "settings_sheet.sync.auto_hint")),
+                    ),
+            )
+            .child(h_flex().gap_2().items_center().child(save).child(run))
+            .child(
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_semibold()
+                            .child(i18n::t(cx, "settings_sheet.sync.status")),
+                    )
+                    .child(div().text_sm().text_color(status_color).child(status_text)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(i18n::t(cx, "settings_sheet.sync.security")),
+            )
+            .into_any_element()
     }
 
     /// Settings › Remote: how to reach this vault from another device, plus

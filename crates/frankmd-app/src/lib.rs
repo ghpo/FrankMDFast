@@ -15,6 +15,7 @@ pub mod note_attachments;
 pub mod preview;
 pub mod remote;
 pub mod scale;
+pub mod sync;
 pub mod ui;
 
 /// App-owned files outside every vault (XDG state dir, IPC socket).
