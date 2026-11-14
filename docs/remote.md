@@ -99,7 +99,7 @@ Desktop window **and** remote server:
 
 ```bash
 frankmdfast --serve ~/notes
-# remote server ready url=http://100.69.202.87:8787
+# remote server ready url=http://<tailscale-ip>:8787
 ```
 
 Or enable it from **Settings › Remote → Start on app launch** (it starts at

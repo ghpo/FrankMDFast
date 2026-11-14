@@ -1,0 +1,26 @@
+[package]
+name = "frankmd-mobile"
+description = "JNI bridge used by the native FrankMDFast Android client."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+frankmd-core.workspace = true
+frankmd-fs.workspace = true
+frankmd-media.workspace = true
+frankmd-markdown.workspace = true
+percent-encoding = "2.3"
+frankmd-crypto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+jni = "0.22"
+thiserror.workspace = true
+
+[lints]
+workspace = true

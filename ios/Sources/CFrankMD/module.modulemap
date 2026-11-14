@@ -1,0 +1,5 @@
+module CFrankMD [system] {
+  header "include/frankmd_ios.h"
+  link "frankmd_ios"
+  export *
+}

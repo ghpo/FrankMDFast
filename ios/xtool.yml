@@ -1,0 +1,5 @@
+version: 1
+bundleID: com.ghpo.frankmd
+product: FrankMDFast
+iconPath: Resources/AppIcon.png
+infoPath: Resources/Info.plist
