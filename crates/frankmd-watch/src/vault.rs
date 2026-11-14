@@ -93,16 +93,21 @@ impl VaultCtx {
         let mut paths = Vec::new();
         let mut removed = Vec::new();
         if rescan {
+            // A rescan covers every path; reporting the individual batch as
+            // well only bloats the SSE payload and makes the web client
+            // reload the tree for nothing. Consumers treat the root as
+            // "rescan everything".
             paths.push(RelPath::root());
-        }
-        for rel in touched {
-            if self.is_own(Path::new(rel.as_str())) {
-                continue;
+        } else {
+            for rel in touched {
+                if self.is_own(Path::new(rel.as_str())) {
+                    continue;
+                }
+                if !self.exists(&rel) {
+                    removed.push(rel.clone());
+                }
+                paths.push(rel);
             }
-            if !self.exists(&rel) {
-                removed.push(rel.clone());
-            }
-            paths.push(rel);
         }
         if !paths.is_empty() {
             self.emitter

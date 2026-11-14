@@ -221,6 +221,9 @@ pub struct Shell {
     pub(crate) autosave_timer: Option<Task<()>>,
     pub(crate) message_timer: Option<Task<()>>,
     pub(crate) watchers: Option<frankmd_watch::Watchers>,
+    /// Last observed `(path, mtime, size)` of the open note, for the polling
+    /// fallback when the file watcher misses an external change.
+    pub(crate) open_doc_poll: Option<(String, Option<std::time::SystemTime>, u64)>,
     pub(crate) last_region: FocusRegion,
     pub(crate) window: AnyWindowHandle,
     pub(crate) _subscriptions: Vec<Subscription>,
@@ -371,6 +374,7 @@ impl Shell {
             autosave_timer: None,
             message_timer: None,
             watchers: None,
+            open_doc_poll: None,
             last_region: FocusRegion::Editor,
             window: window.window_handle(),
             _subscriptions: [
@@ -418,6 +422,7 @@ impl Shell {
         }
         shell.refresh_quick_open(cx);
         shell.open_initial(config.open.as_deref(), window, cx);
+        shell.spawn_open_doc_poll(cx);
         shell.update_title(window);
         if shell.sync.auto() && shell.sync.configured() {
             shell.start_sync(window, cx);
@@ -498,10 +503,14 @@ impl Shell {
                 self.update_title(window);
             }
             Event::DocReloaded { text, .. } => {
+                tracing::info!(bytes = text.len(), "reloaded open note from disk");
                 self.editor.set_text(&text, window, cx);
                 self.render_preview_now(cx);
             }
-            Event::DocConflict { .. } => self.banners.raise(BannerKind::ChangedOnDisk),
+            Event::DocConflict { .. } => {
+                tracing::warn!("open note changed on disk but buffer is dirty");
+                self.banners.raise(BannerKind::ChangedOnDisk)
+            }
             Event::DocDeletedOnDisk { .. } => self.banners.raise(BannerKind::DeletedOnDisk),
             Event::DocSaved { .. } => self.update_title(window),
             Event::Remapped(remaps) => {

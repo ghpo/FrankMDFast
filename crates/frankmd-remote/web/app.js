@@ -22,6 +22,7 @@
     dirty: false,
     saving: false,
     saveQueued: false,
+    remoteChange: false,
     lastSavedAt: null,
     settings: {},
     theme: null,
@@ -530,6 +531,7 @@
       state.revision = data.revision;
       state.encrypted = !!data.encrypted;
       state.dirty = false;
+      state.remoteChange = false;
       state.lastSavedAt = null;
       $("#editor").value = data.content;
       $("#editor").readOnly = !!data.read_only;
@@ -624,6 +626,7 @@
       if (state.openPath === path) {
         state.revision = data.revision;
         state.dirty = $("#editor").value !== content;
+        state.remoteChange = false;
         state.lastSavedAt = new Date();
       }
       updateEditorChrome();
@@ -1204,8 +1207,15 @@
       if (message.type === "tree") {
         loadTree();
         loadRecent();
-        if (state.openPath && !state.dirty && message.paths.includes(state.openPath)) {
+        const paths = Array.isArray(message.paths) ? message.paths : [];
+        const rescan = paths.length === 0 || paths.includes("");
+        const changed = !!state.openPath && (rescan || paths.includes(state.openPath));
+        if (changed && !state.dirty) {
+          state.remoteChange = false;
           openNote(state.openPath);
+        } else if (changed && state.dirty && !state.remoteChange) {
+          state.remoteChange = true;
+          toast("This note changed on disk. Save or reload to see the latest version.", "info");
         }
       } else if (message.type === "config") {
         loadSettings();

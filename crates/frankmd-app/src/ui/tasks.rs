@@ -115,6 +115,7 @@ impl Shell {
         let window = self.window;
         cx.spawn(async move |this, cx| {
             while let Ok(ev) = rx.recv().await {
+                tracing::debug!(?ev, "watch event");
                 let stop = window
                     .update(cx, |_, window, cx| {
                         this.update(cx, |shell, cx| match ev {
@@ -135,5 +136,71 @@ impl Shell {
             }
         })
         .detach();
+    }
+
+    /// Polling fallback for the open note. The inotify watcher can miss events
+    /// (overflow, network filesystems, another process replacing the file) and
+    /// the web client can save while the desktop is idle. A single `stat` per
+    /// second is cheap; the note is only re-read when `mtime` or size changes.
+    pub(crate) fn spawn_open_doc_poll(&self, cx: &mut Context<Self>) {
+        let window = self.window;
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(1))
+                    .await;
+                let stop = window
+                    .update(cx, |_, window, cx| {
+                        this.update(cx, |shell, cx| shell.poll_open_doc(window, cx))
+                            .is_err()
+                    })
+                    .unwrap_or(true);
+                if stop {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn poll_open_doc(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self
+            .core
+            .as_ref()
+            .and_then(|c| c.ws.open_doc())
+            .map(|d| d.path.as_str().to_owned())
+        else {
+            self.open_doc_poll = None;
+            return;
+        };
+        let abs = self.vault_root.join(&path);
+        let Ok(meta) = std::fs::metadata(&abs) else {
+            self.open_doc_poll = None;
+            return;
+        };
+        let key = (path.clone(), meta.modified().ok(), meta.len());
+        if self.open_doc_poll.as_ref() == Some(&key) {
+            return;
+        }
+        self.open_doc_poll = Some(key);
+        let Ok(bytes) = std::fs::read(&abs) else {
+            return;
+        };
+        // Our own autosave just replaced the file: the editor already holds
+        // these bytes, so dispatching would only reset the caret and undo.
+        if bytes.as_slice() == self.editor.text(cx).as_bytes() {
+            return;
+        }
+        let Ok(rel) = frankmd_core::RelPath::parse(&path) else {
+            return;
+        };
+        self.dispatch(
+            Command::External(frankmd_watch::WatchEvent::VaultChanged {
+                paths: vec![rel],
+                removed: Vec::new(),
+            }),
+            window,
+            cx,
+        );
     }
 }
